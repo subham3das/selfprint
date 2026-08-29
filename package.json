@@ -1,0 +1,31 @@
+{
+  "name": "self-print",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-Print production-ready monorepo",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev": "npm run dev:frontend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "build": "npm run build:frontend && npm run build:backend",
+    "lint": "npm run lint --workspace=frontend",
+    "prisma:generate": "npm run prisma:generate --workspace=backend",
+    "prisma:migrate": "npm run prisma:migrate --workspace=backend"
+  },
+  "keywords": [
+    "monorepo",
+    "react",
+    "vite",
+    "express",
+    "typescript",
+    "prisma"
+  ],
+  "author": "",
+  "license": "MIT"
+}
