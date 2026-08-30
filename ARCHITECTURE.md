@@ -54,13 +54,16 @@ graph TD
 
 ## 4. Backend Architecture
 
-- **Pattern:** Layered Architecture (Controller-Service-Repository/Model pattern).
+- **Pattern:** Feature-first layered architecture (Controller -> Service -> Repository Pattern).
+- **Core Technologies:** Node.js, Express, TypeScript, MongoDB (Mongoose ODM), Cloudinary SDK, JWT, bcryptjs, Helmet, Rate Limiter, Zod.
 - **Layer Responsibilities:**
-  1. **Router Layer (`src/routes/`):** Defines endpoint paths, HTTP verbs, and attaches route-specific middlewares.
-  2. **Middleware Layer (`src/middleware/`):** Handles authentication, request validation, rate limiting, and global error handling.
-  3. **Controller Layer (`src/controllers/`):** Thin controllers responsible for extracting request data (`req.params`, `req.query`, `req.body`), invoking services, and formatting HTTP responses using `ApiResponse`.
-  4. **Service Layer (`src/services/`):** Pure business logic, document manipulation, pricing calculations, job state transitions, and coordination. No direct `req`/`res` objects.
-  5. **Data Access Layer (`src/lib/prisma.ts` / Prisma Client):** Type-safe database queries, transactional integrity, and database relations.
+  1. **Routing Layer (`src/routes/`):** Defines HTTP endpoints, parameters, and attaches auth/RBAC middlewares.
+  2. **Middlewares Layer (`src/middlewares/`):** Centralized error handling (`errorHandler.ts`), 404 handler (`notFoundHandler.ts`), JWT authentication (`auth.middleware.ts`), role checking (`role.middleware.ts`), permission checks (`permission.middleware.ts`), and rate limiters (`rateLimiter.ts`).
+  3. **Controller Layer (`src/controllers/`):** Thin controllers extending `BaseController` responsible for extracting request inputs (`req.params`, `req.query`, `req.body`), invoking services, and formatting HTTP envelopes with `ApiResponse`. Controllers never contain business logic.
+  4. **Service Layer (`src/services/`):** Pure business logic extending `BaseService`, handling validation rules, pricing calculations, job state transitions, and coordination. No direct `req`/`res` objects.
+  5. **Data Access Layer (`src/repositories/`):** Abstract `BaseRepository<T>` encapsulating Mongoose queries, projections, lean reads, and pagination.
+  6. **Storage Layer (`src/cloudinary/` & `src/storage/`):** Reusable multi-type asset upload, deletion, and replacement utility powered by Cloudinary.
+  7. **Validation Engine (`src/validators/` & `src/schemas/`):** Project-wide Zod validation middleware for request bodies, query params, and URL route parameters.
 
 ---
 
@@ -76,16 +79,12 @@ The Print Agent is an automated background daemon installed on the physical stat
 
 ---
 
-## 6. Database Structure
+## 6. Database Architecture
 
-PostgreSQL managed via Prisma ORM.
+- **Primary Database:** MongoDB Atlas cluster with Mongoose ODM connection manager (`src/database/connection.ts`).
+- **Documentation & Tracking:** Single source of truth is [`DATABASE.md`](file:///d:/project/selfprint/DATABASE.md).
+- **Rule:** Collections and models are created **feature-by-feature**. No premature collection creation or fake seeding.
 
-### Planned Core Models:
-- **`User`:** Identity, email, optional password/auth metadata, role (CUSTOMER, ADMIN, STATION_OPERATOR).
-- **`PrintJob`:** Tracks each printing request: user reference, printer station reference, file reference, options (copies, colorMode, pageRange, duplex, paperSize), status enum, cost, payment status.
-- **`PrinterStation`:** Hardware location metadata, station code/QR code, online status, supported paper types, pricing rules.
-- **`FileRecord`:** Original file name, MIME type, storage path/URL, file size, total page count, hash.
-- **`PaymentTransaction` (future):** Payment gateway transaction ID, amount, status, timestamps.
 
 ---
 
@@ -96,17 +95,16 @@ self-print/
 ├── frontend/
 │   ├── public/             # Static public assets
 │   ├── src/
-│   │   ├── assets/         # Imported assets (images, SVGs)
-│   │   ├── components/
-│   │   │   ├── common/     # Cross-feature shared components
-│   │   │   ├── layout/     # Structural shell layouts
-│   │   │   └── ui/         # Design system primitives
+│   │   ├── admin_pannel/   # Super Admin Platform Management (Dashboard, Analytics, Stores, Txns)
+│   │   ├── store_pannel/   # Store Operator Console (Dashboard, Queue, QR Studio, History, Settings)
+│   │   ├── user_pannel/    # Customer Kiosk Flow (Zero-login upload, PDF Reader, Live Progress)
+│   │   ├── components/     # Cross-feature shared UI primitives and layouts
 │   │   ├── constants/      # Global client constants & route names
 │   │   ├── context/        # React context providers
 │   │   ├── hooks/          # Custom reusable React hooks
 │   │   ├── lib/            # Third-party configurations (Axios, QueryClient)
-│   │   ├── pages/          # Route view components
-│   │   ├── routes/         # Router declarations
+│   │   ├── pages/          # Root view components
+│   │   ├── routes/         # Router declarations (AppRoutes)
 │   │   ├── services/       # Feature API call definitions
 │   │   ├── styles/         # Global style declarations
 │   │   ├── types/          # TypeScript interfaces and contracts
@@ -114,6 +112,7 @@ self-print/
 │   │   ├── App.tsx         # App wrapper with providers
 │   │   ├── main.tsx        # React DOM mount point
 │   │   └── index.css       # Tailwind base styles
+
 │   ├── index.html
 │   ├── package.json
 │   ├── tsconfig.json

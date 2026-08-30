@@ -1,18 +1,28 @@
 import React, { useRef, useState } from 'react';
-import { UploadCloud, X, File, FileText, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  UploadCloud,
+  FileText,
+  Image as ImageIcon,
+  X,
+  ExternalLink
+} from 'lucide-react';
 import { UploadedFileInfo } from '../types/userPrint.types';
 
 interface DocumentUploadZoneProps {
   file: UploadedFileInfo | null;
   onFileSelect: (file: UploadedFileInfo) => void;
   onFileRemove: () => void;
+  onOpenPreview?: () => void;
+  pageSummaryBadge?: string;
 }
 
 export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
   file,
   onFileSelect,
-  onFileRemove
+  onFileRemove,
+  onOpenPreview,
+  pageSummaryBadge
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -43,7 +53,8 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
       formattedSize: formatFileSize(selectedFile.size),
       type: selectedFile.type,
       extension: extension,
-      totalPages: estimatedPages
+      totalPages: estimatedPages,
+      rawFile: selectedFile
     };
 
     onFileSelect(newFileInfo);
@@ -59,30 +70,30 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
     const ext = extension.toLowerCase();
     if (ext === 'pdf') {
       return (
-        <div className="w-9 h-10 sm:w-10 sm:h-11 rounded-xl bg-rose-500 text-white flex flex-col items-center justify-center shadow-xs shrink-0 font-bold">
-          <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          <span className="text-[8px] sm:text-[9px] uppercase tracking-tighter mt-0.5">PDF</span>
+        <div className="w-10 h-10 rounded-xl bg-red-500 text-white flex flex-col items-center justify-center font-bold text-[9px] tracking-tight uppercase shadow-xs shrink-0">
+          <FileText className="w-4 h-4 mb-0.5" />
+          <span>PDF</span>
         </div>
       );
     }
     if (['jpg', 'jpeg', 'png'].includes(ext)) {
       return (
-        <div className="w-9 h-10 sm:w-10 sm:h-11 rounded-xl bg-blue-500 text-white flex flex-col items-center justify-center shadow-xs shrink-0 font-bold">
-          <ImageIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          <span className="text-[8px] sm:text-[9px] uppercase tracking-tighter mt-0.5">IMG</span>
+        <div className="w-10 h-10 rounded-xl bg-indigo-500 text-white flex flex-col items-center justify-center font-bold text-[9px] tracking-tight uppercase shadow-xs shrink-0">
+          <ImageIcon className="w-4 h-4 mb-0.5" />
+          <span>IMG</span>
         </div>
       );
     }
     return (
-      <div className="w-9 h-10 sm:w-10 sm:h-11 rounded-xl bg-indigo-600 text-white flex flex-col items-center justify-center shadow-xs shrink-0 font-bold">
-        <File className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-        <span className="text-[8px] sm:text-[9px] uppercase tracking-tighter mt-0.5">DOC</span>
+      <div className="w-10 h-10 rounded-xl bg-slate-700 text-white flex flex-col items-center justify-center font-bold text-[9px] tracking-tight uppercase shadow-xs shrink-0">
+        <FileText className="w-4 h-4 mb-0.5" />
+        <span>DOC</span>
       </div>
     );
   };
 
   return (
-    <div className="w-full space-y-3">
+    <div className="w-full space-y-2.5 sm:space-y-3">
       {/* Hidden File Input */}
       <input
         ref={fileInputRef}
@@ -123,24 +134,31 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
         </p>
       </div>
 
-      {/* Uploaded File Card matching user_ui.png */}
+      {/* Uploaded File Card with Tap to Preview Trigger */}
       <AnimatePresence>
         {file && (
           <motion.div
             initial={{ opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
-            className="w-full rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-3.5 shadow-xs flex items-center justify-between gap-2.5 sm:gap-3 overflow-hidden"
+            onClick={onOpenPreview}
+            className="w-full rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-3.5 shadow-xs flex items-center justify-between gap-2.5 sm:gap-3 overflow-hidden cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all active:scale-[0.99] group"
           >
             {/* File Icon & Details */}
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
               {getFileBadge(file.extension)}
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold text-slate-900 truncate">
-                  {file.name}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold text-slate-900 truncate">
+                    {file.name}
+                  </p>
+                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100/80 flex items-center gap-1 shrink-0">
+                    <span>Tap to Preview</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </span>
+                </div>
                 <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium mt-0.5 truncate">
-                  {file.formattedSize} &bull; {file.totalPages} pages
+                  {file.formattedSize} &bull; {file.totalPages} pages {pageSummaryBadge ? `(${pageSummaryBadge})` : ''}
                 </p>
               </div>
             </div>

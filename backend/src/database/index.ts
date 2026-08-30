@@ -1,2 +1,1 @@
-// Database connection utilities and seeding functions
-export {};
+export * from './connection';

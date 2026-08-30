@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Printer } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PrinterIllustration } from '../components/progress/PrinterIllustration';
+import { PrinterFramePlayer } from '../components/progress/PrinterFramePlayer';
 import { PrintProgressCard } from '../components/progress/PrintProgressCard';
 import { PrintTimelineCard } from '../components/progress/PrintTimelineCard';
 import { PrintJobDetailsCard } from '../components/progress/PrintJobDetailsCard';
@@ -28,8 +28,9 @@ export const UserProgressPage: React.FC = () => {
     | undefined;
 
   const fileName = passedState?.fileName || 'Notes.pdf';
-  const totalPages = passedState?.pages || 18;
+  const pagesPerCopy = passedState?.pages || 18;
   const totalCopies = passedState?.copies || 2;
+  const totalBillablePages = pagesPerCopy * totalCopies;
   const paperSize = passedState?.paperSize || 'A4';
   const colorMode = passedState?.colorMode || 'Black & White';
   const totalPaid = passedState?.totalPaid || 36.0;
@@ -40,60 +41,56 @@ export const UserProgressPage: React.FC = () => {
     storeId: storeId || mockStoreKioskInfo.storeId
   };
 
-  // Printing Lifecycle State
-  const [currentPage, setCurrentPage] = useState(1);
-  const [currentCopy, setCurrentCopy] = useState(1);
-  const [percent, setPercent] = useState(5);
-  const [isCompleted, setIsCompleted] = useState(false);
-  const totalBillablePages = totalPages * totalCopies;
-  const [secondsRemaining, setSecondsRemaining] = useState(18);
+  // Synchronized Print Progress State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [isCompleted, setIsCompleted] = useState<boolean>(false);
+  const cycleDurationMs = 2400; // 2.4 seconds per page cycle (300 frames)
 
-  useEffect(() => {
-    let printedPagesCount = 1;
-    const intervalTime = 900; // Step every ~900ms for satisfying live progression
+  // Current copy number calculation
+  const currentCopy = Math.min(
+    totalCopies,
+    Math.floor((currentPage - 1) / pagesPerCopy) + 1
+  );
+  const pageInCurrentCopy = ((currentPage - 1) % pagesPerCopy) + 1;
 
-    const interval = setInterval(() => {
-      printedPagesCount += 1;
+  // Percentage & Estimated Time
+  const percent = Math.min(
+    100,
+    Math.round(((currentPage - 1) / totalBillablePages) * 100) +
+      Math.round((1 / totalBillablePages) * 50)
+  );
+  const secondsRemaining = Math.max(
+    0,
+    Math.round((totalBillablePages - currentPage + 1) * (cycleDurationMs / 1000))
+  );
 
-      if (printedPagesCount <= totalBillablePages) {
-        const activePageInDoc = ((printedPagesCount - 1) % totalPages) + 1;
-        const activeCopyNum = Math.floor((printedPagesCount - 1) / totalPages) + 1;
-        const currentPct = Math.min(
-          99,
-          Math.round((printedPagesCount / totalBillablePages) * 100)
-        );
-        const secsLeft = Math.max(
-          1,
-          Math.round((totalBillablePages - printedPagesCount) * 0.9)
-        );
-
-        setCurrentPage(activePageInDoc);
-        setCurrentCopy(activeCopyNum);
-        setPercent(currentPct);
-        setSecondsRemaining(secsLeft);
+  // Callback when a 300-frame page cycle completes
+  const handlePageCycleFinished = useCallback(
+    (finishedPage: number) => {
+      if (finishedPage < totalBillablePages) {
+        setCurrentPage(finishedPage + 1);
       } else {
-        setPercent(100);
-        setSecondsRemaining(0);
-        clearInterval(interval);
-        setTimeout(() => {
-          setIsCompleted(true);
-        }, 600);
+        setCurrentPage(totalBillablePages);
       }
-    }, intervalTime);
+    },
+    [totalBillablePages]
+  );
 
-    return () => clearInterval(interval);
-  }, [totalPages, totalCopies, totalBillablePages]);
+  // Callback when all pages are finished (after 500ms delay on frame 300)
+  const handleAllPagesFinished = useCallback(() => {
+    setIsCompleted(true);
+  }, []);
 
   const handlePrintMore = () => {
     navigate(`/store/${storeInfo.storeId}`);
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-start items-center font-sans antialiased text-slate-900 overflow-x-hidden md:py-8">
+    <div className="h-[100dvh] w-full bg-[#F8FAFC] flex flex-col justify-center items-center font-sans antialiased text-slate-900 overflow-hidden md:p-4">
       {/* Mobile-first Container */}
-      <div className="w-full max-w-md bg-white md:rounded-[32px] md:border md:border-slate-200/80 md:shadow-2xl md:shadow-indigo-500/5 min-h-screen md:min-h-0 flex flex-col justify-between p-4 sm:p-6 overflow-hidden relative">
+      <div className="w-full max-w-md bg-white md:rounded-[32px] md:border md:border-slate-200/80 md:shadow-2xl md:shadow-indigo-500/5 h-full md:h-[92vh] md:max-h-[880px] flex flex-col relative overflow-hidden">
         {/* Header Store Pill */}
-        <header className="w-full pt-1 sm:pt-2 pb-2 flex items-center justify-between select-none">
+        <header className="w-full pt-3 px-4 sm:px-6 pb-2 flex items-center justify-between select-none shrink-0 border-b border-slate-100/80 bg-white/90 backdrop-blur-xs">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0">
               <Printer className="w-4 h-4" />
@@ -114,9 +111,8 @@ export const UserProgressPage: React.FC = () => {
           </div>
         </header>
 
-
-        {/* Dynamic Body Content */}
-        <div className="py-2 flex-1 flex flex-col justify-center">
+        {/* Dynamic Scrollable Body Content */}
+        <div className="flex-1 w-full px-4 sm:px-6 py-4 overflow-y-auto overscroll-contain">
           <AnimatePresence mode="wait">
             {!isCompleted ? (
               <motion.div
@@ -133,22 +129,25 @@ export const UserProgressPage: React.FC = () => {
                     Printing Your Documents...
                   </h1>
                   <p className="text-xs text-slate-500 font-medium">
-                    Please wait while your documents are being printed.
+                    Printing Page {currentPage} of {totalBillablePages}
                   </p>
                 </div>
 
-                {/* Animated Printer Illustration with Paper Output Loop */}
-                <PrinterIllustration
-                  isPrinting={true}
+                {/* Synchronized 300-Frame Loop Printer Player */}
+                <PrinterFramePlayer
+                  totalPages={totalBillablePages}
                   currentPage={currentPage}
-                  totalPages={totalPages}
+                  isPrinting={!isCompleted}
+                  onPageCycleFinished={handlePageCycleFinished}
+                  onAllPagesFinished={handleAllPagesFinished}
+                  cycleDurationMs={cycleDurationMs}
                 />
 
                 {/* Progress Bar & Page Counter Card */}
                 <PrintProgressCard
                   fileName={fileName}
-                  currentPage={currentPage}
-                  totalPages={totalPages}
+                  currentPage={pageInCurrentCopy}
+                  totalPages={pagesPerCopy}
                   currentCopy={currentCopy}
                   totalCopies={totalCopies}
                   percent={percent}
@@ -161,7 +160,7 @@ export const UserProgressPage: React.FC = () => {
                 {/* Job Specifications Card */}
                 <PrintJobDetailsCard
                   fileName={fileName}
-                  pages={totalPages}
+                  pages={pagesPerCopy}
                   copies={totalCopies}
                   paperSize={paperSize}
                   colorMode={colorMode}
@@ -176,11 +175,12 @@ export const UserProgressPage: React.FC = () => {
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
+                className="py-2"
               >
                 {/* Success View with Confetti, Checkmark, Receipt & Countdown */}
                 <PrintSuccessView
                   fileName={fileName}
-                  pages={totalPages}
+                  pages={pagesPerCopy}
                   copies={totalCopies}
                   totalPaid={totalPaid}
                   jobCode={jobCode}

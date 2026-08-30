@@ -642,10 +642,183 @@ Before making any code changes or proposing new features, every AI agent must:
       "jobId": "SP-10239-082",
       "status": "Completed",
       "completedAt": "2026-08-29T12:06:18.000Z",
-      "totalBillablePages": 36,
-      "message": "Please collect your printouts from the tray"
+### 18. Store Partner Onboarding Registration
+
+- **Endpoint:** `POST /api/v1/store/register` (or `/api/store/register`)
+- **Description:** Registers a new print store partner with business metadata, owner credentials, and bank payout details.
+- **Authentication:** None (Public partner onboarding)
+- **Request Payload (`application/json`):**
+  ```json
+  {
+    "storeDetails": {
+      "storeName": "Print Hub Xerox & Cyber Cafe",
+      "ownerName": "Diganta Borah",
+      "storeAddress": "Shop No. 4, Opposite Cotton University, Panbazar",
+      "country": "India",
+      "state": "Assam",
+      "city": "Guwahati",
+      "pinCode": "781001",
+      "phone": "9864012345",
+      "alternatePhone": "9864098765",
+      "email": "printhub.guwahati@gmail.com",
+      "gstNumber": "18AABCU9603R1ZM",
+      "storeImage": "data:image/jpeg;base64,...",
+      "password": "Password@123"
+    },
+    "bankDetails": {
+      "accountHolderName": "Diganta Borah",
+      "bankName": "State Bank of India",
+      "accountNumber": "302948192834",
+      "ifscCode": "SBIN0000088",
+      "branchName": "Panbazar Branch, Guwahati",
+      "upiId": "printhub@sbi"
+    },
+    "confirmed": true
+  }
+  ```
+- **Success Response (`201 Created`):**
+  ```json
+  {
+    "success": true,
+    "message": "Store partner registered successfully",
+    "data": {
+      "storeId": "STR-2025-089",
+      "storeName": "Print Hub Xerox & Cyber Cafe",
+      "qrToken": "qr_live_9812401",
+      "storeToken": "tok_store_STR-2025-089_1740000000"
+    },
+    "timestamp": "2026-08-30T10:45:00.000Z"
+  }
+  ```
+
+---
+
+### 19. Store Partner Login
+
+- **Endpoint:** `POST /api/v1/store/login` (or `/api/store/login`)
+- **Description:** Authenticates a registered store partner using email and password credentials.
+- **Authentication:** None (Public login)
+- **Request Payload (`application/json`):**
+  ```json
+  {
+    "email": "printhub.guwahati@gmail.com",
+    "password": "Password@123"
+  }
+  ```
+- **Success Response (`200 OK`):**
+  ```json
+  {
+    "success": true,
+    "message": "Store authenticated successfully",
+    "data": {
+      "token": "tok_store_STR-7810_1740000000",
+      "store": {
+        "storeId": "STR-7810",
+        "storeName": "Print Hub Xerox & Cyber Cafe",
+        "ownerName": "Diganta Borah",
+        "email": "printhub.guwahati@gmail.com",
+        "phone": "9864012345",
+        "address": "Shop No. 4, Opposite Cotton University, Panbazar, Guwahati",
+        "city": "Guwahati",
+        "state": "Assam"
+      }
+    },
+    "timestamp": "2026-08-30T10:50:00.000Z"
+  }
+  ```
+- **Error Response (`401 Unauthorized`):**
+  ```json
+  {
+    "success": false,
+    "message": "The email or password you entered is incorrect. Please try again.",
+    "error": "INVALID_CREDENTIALS",
+    "timestamp": "2026-08-30T10:50:00.000Z"
+  }
+  ```
+
+---
+
+### 20. Printer Hardware Detection & Setup APIs
+
+#### 20.1 Detect Connected Printers
+- **Endpoint:** `GET /api/v1/printer/detect`
+- **Description:** Scans local OS USB ports, Windows Print Spooler, CUPS, and local Wi-Fi/LAN subnets for compatible printing devices.
+- **Success Response (`200 OK`):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "printers": [
+        {
+          "id": "prn-hp-1020",
+          "name": "HP LaserJet 1020 Plus",
+          "brand": "HP",
+          "model": "LaserJet 1020 Plus Series",
+          "type": "LaserJet",
+          "connection": "USB",
+          "port": "USB001",
+          "isColor": false,
+          "isDuplexSupported": false,
+          "paperLevel": 88,
+          "inkLevels": { "black": 82 },
+          "status": "Online"
+        }
+      ]
     }
-    ```
+  }
+  ```
+
+#### 20.2 Connect & Configure Printer
+- **Endpoint:** `POST /api/v1/printer/connect`
+- **Request Payload:**
+  ```json
+  {
+    "printerId": "prn-hp-1020",
+    "config": {
+      "defaultPaper": "A4",
+      "defaultQuality": "Standard",
+      "defaultColorMode": "Black & White",
+      "duplex": false,
+      "autoCut": false,
+      "autoSpool": true
+    }
+  }
+  ```
+
+#### 20.3 Test Print Page Spooler
+- **Endpoint:** `POST /api/v1/printer/test`
+- **Request Payload:** `{ "printerId": "prn-hp-1020" }`
+- **Success Response (`200 OK`):**
+  ```json
+  {
+    "success": true,
+    "message": "Diagnostic test sheet spooled successfully",
+    "data": { "jobId": "TST-PAGE-9812" }
+  }
+  ```
+
+#### 20.4 Live Telemetry & Health Status
+- **Endpoint:** `GET /api/v1/printer/status`
+- **Success Response (`200 OK`):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "printerId": "prn-hp-1020",
+      "status": "Online",
+      "paperLevel": 88,
+      "inkLevels": { "black": 82 },
+      "spoolerQueueCount": 0
+    }
+  }
+  ```
+
+#### 20.5 Restart Spooler
+- **Endpoint:** `POST /api/v1/printer/restart`
+- **Request Payload:** `{ "printerId": "prn-hp-1020" }`
+- **Success Response (`200 OK`):** `{ "success": true, "message": "Spooler restarted" }`
+
+
 
 
 

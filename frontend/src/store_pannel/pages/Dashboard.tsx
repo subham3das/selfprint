@@ -5,13 +5,17 @@ import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { StatsGrid } from '../components/StatsCard';
 import { QueueCard } from '../components/QueueCard';
-import { PrinterStatus } from '../components/PrinterStatus';
+import { PrinterStatusMonitor } from '../components/printer/PrinterStatusMonitor';
+import { PrinterNotifications } from '../components/printer/PrinterNotifications';
+import { PrinterSetupWizard } from '../components/printer/PrinterSetupWizard';
 import { ActivityCard } from '../components/ActivityCard';
 import { StockAlertsCard } from '../components/StockAlertsCard';
 import { SummaryCard } from '../components/SummaryCard';
 import { JobDetailsModal } from '../components/JobDetailsModal';
 import { QRGenerationModal } from '../components/QRGenerationModal';
 import { PrinterSettingsModal } from '../components/PrinterSettingsModal';
+import { usePrinterMonitoring } from '../hooks/usePrinterMonitoring';
+import { printerService } from '../services/printer.service';
 import {
   mockStoreInfo,
   mockStatItems,
@@ -31,6 +35,15 @@ export const StoreDashboard: React.FC = () => {
   const [selectedQueueTab, setSelectedQueueTab] = useState<QueueTab>('All');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
+  // Printer Monitoring & Detection Hook
+  const {
+    activePrinter,
+    setActivePrinter,
+    notifications,
+    dismissNotification,
+    triggerMockEvent,
+    restartSpooler
+  } = usePrinterMonitoring();
 
   // Printer & Store State
   const [isPaused, setIsPaused] = useState(false);
@@ -41,6 +54,21 @@ export const StoreDashboard: React.FC = () => {
   const [selectedJob, setSelectedJob] = useState<JobItem | null>(null);
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isPrinterWizardOpen, setIsPrinterWizardOpen] = useState(false);
+
+  // Auto-launch printer wizard if no printer configured and not suppressed
+  useEffect(() => {
+    const configured = printerService.getSavedPrinter();
+    const isSuppressed = printerService.isWizardSuppressed();
+
+    if (!configured && !isSuppressed) {
+      // Gentle 400ms delay for smooth entrance
+      const timer = setTimeout(() => {
+        setIsPrinterWizardOpen(true);
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Auto-refresh simulation ticker
   useEffect(() => {
@@ -57,6 +85,7 @@ export const StoreDashboard: React.FC = () => {
 
     return () => clearInterval(timer);
   }, []);
+
 
   const handleTogglePause = () => {
     setIsPaused((prev) => !prev);
@@ -146,10 +175,14 @@ export const StoreDashboard: React.FC = () => {
               />
             </div>
             <div className="lg:col-span-4 flex flex-col">
-              <PrinterStatus
-                printer={mockPrinterStatus}
+              <PrinterStatusMonitor
+                printer={activePrinter}
                 isPaused={isPaused}
-                onOpenSettings={() => setIsSettingsModalOpen(true)}
+                onTogglePause={handleTogglePause}
+                onOpenWizard={() => setIsPrinterWizardOpen(true)}
+                onRunTestPrint={() => printerService.sendTestPrint(activePrinter.id)}
+                onRestartSpooler={restartSpooler}
+                onTriggerEvent={triggerMockEvent}
               />
             </div>
           </div>
@@ -206,8 +239,25 @@ export const StoreDashboard: React.FC = () => {
         isPaused={isPaused}
         onTogglePause={handleTogglePause}
       />
+
+      {/* Production-Level Printer Setup Wizard Modal */}
+      <PrinterSetupWizard
+        isOpen={isPrinterWizardOpen}
+        onClose={() => setIsPrinterWizardOpen(false)}
+        onPrinterConfigured={(configuredPrinter) => {
+          setActivePrinter(configuredPrinter);
+          setIsPrinterWizardOpen(false);
+        }}
+      />
+
+      {/* Floating Real-time Printer Notifications */}
+      <PrinterNotifications
+        notifications={notifications}
+        onDismiss={dismissNotification}
+      />
     </div>
   );
 };
 
 export default StoreDashboard;
+

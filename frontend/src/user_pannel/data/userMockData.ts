@@ -1,7 +1,8 @@
 import {
   StoreKioskInfo,
   UploadedFileInfo,
-  UserPrintJobConfig
+  UserPrintJobConfig,
+  PagePrintConfig
 } from '../types/userPrint.types';
 
 export const mockStoreKioskInfo: StoreKioskInfo = {
@@ -27,6 +28,15 @@ export const initialMockFile: UploadedFileInfo = {
   totalPages: 12
 };
 
+const defaultPageConfigs: Record<number, PagePrintConfig> = {};
+for (let i = 1; i <= 12; i++) {
+  defaultPageConfigs[i] = {
+    pageNum: i,
+    mode: 'bw',
+    isSelected: true
+  };
+}
+
 export const initialUserPrintConfig: UserPrintJobConfig = {
   copies: 1,
   colorMode: 'Black & White',
@@ -35,5 +45,7 @@ export const initialUserPrintConfig: UserPrintJobConfig = {
   duplex: 'Single',
   pageSelection: 'All',
   customRange: '1-12',
-  selectedPagesCount: 12
+  selectedPagesCount: 12,
+  selectedPages: Array.from({ length: 12 }, (_, i) => i + 1),
+  pageConfigs: defaultPageConfigs
 };

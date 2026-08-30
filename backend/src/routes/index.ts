@@ -1,9 +1,12 @@
 import { Router } from 'express';
-import healthRoutes from './health.routes';
+import { healthRoutes } from './health.routes';
 
-const rootRouter = Router();
+const apiRouter = Router();
 
-// Mount sub-routers
-rootRouter.use('/', healthRoutes);
+// Mount System Health Check
+apiRouter.use('/health', healthRoutes);
 
-export default rootRouter;
+// NOTE: Future feature modules (auth, stores, users, print-jobs, etc.)
+// will be mounted here as each feature is implemented according to DATABASE.md.
+
+export default apiRouter;
