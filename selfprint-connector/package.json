@@ -1,0 +1,35 @@
+{
+  "name": "selfprint-connector",
+  "version": "0.1.0",
+  "description": "Lightweight Windows background connector service for Self Print Cloud Platform",
+  "main": "dist/app.js",
+  "scripts": {
+    "dev": "ts-node src/app.ts",
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "clean": "rimraf dist",
+    "desktop:install": "npm --prefix desktop install",
+    "desktop:dev": "npm --prefix desktop run dev",
+    "desktop:build": "npm --prefix desktop run build && npm --prefix desktop run build:electron",
+    "desktop:start": "npm --prefix desktop run desktop"
+  },
+  "keywords": [
+    "selfprint",
+    "printer-connector",
+    "windows-service",
+    "spooler",
+    "socket.io",
+    "electron"
+  ],
+  "author": "Self Print Engineering",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.19",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}

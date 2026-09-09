@@ -1,0 +1,15 @@
+{
+  "connectorId": "cntr_d44f4051-a32a-401d-af78-6bfa6b3bf242",
+  "machineId": "mach_8189c52071137cb4",
+  "deviceToken": null,
+  "connectorVersion": "0.2.0",
+  "lastHeartbeat": null,
+  "connectorSettings": {
+    "backendUrl": "http://localhost:3000",
+    "port": 4500,
+    "scanIntervalMs": 30000,
+    "heartbeatIntervalMs": 15000,
+    "includeVirtualPrinters": true,
+    "logLevel": "INFO"
+  }
+}

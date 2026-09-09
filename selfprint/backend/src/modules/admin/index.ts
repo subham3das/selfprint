@@ -1,0 +1,51 @@
+import { Router } from 'express';
+import { adminUsersRouter } from './users';
+import adminAuthRouter from './auth/adminAuth.routes';
+import { adminStoresRouter } from './stores';
+import { adminDashboardRouter } from './dashboard';
+import { adminTransactionsRouter } from './transactions';
+import { adminRevenueRouter } from './revenue';
+import { adminPrintersRouter } from './printers';
+import { adminSupportRouter } from './support';
+import { adminAnalyticsRouter } from './analytics';
+import { adminAccessRouter } from './access';
+import { adminAuditLogsRouter } from './auditLogs';
+import { adminSettingsRouter } from './settings';
+
+const adminRouter = Router();
+
+// Sub-module route mounts & aliases
+adminRouter.use('/dashboard', adminDashboardRouter);
+adminRouter.use('/auth', adminAuthRouter);
+adminRouter.use('/users', adminUsersRouter);
+adminRouter.use('/user', adminUsersRouter);
+adminRouter.use('/stores', adminStoresRouter);
+adminRouter.use('/store', adminStoresRouter);
+adminRouter.use('/transactions', adminTransactionsRouter);
+adminRouter.use('/transaction', adminTransactionsRouter);
+adminRouter.use('/revenue', adminRevenueRouter);
+adminRouter.use('/printers', adminPrintersRouter);
+adminRouter.use('/printer', adminPrintersRouter);
+adminRouter.use('/support', adminSupportRouter);
+adminRouter.use('/analytics', adminAnalyticsRouter);
+adminRouter.use('/access', adminAccessRouter);
+adminRouter.use('/access-control', adminAccessRouter);
+adminRouter.use('/audit-logs', adminAuditLogsRouter);
+adminRouter.use('/audit', adminAuditLogsRouter);
+adminRouter.use('/settings', adminSettingsRouter);
+adminRouter.use('/setting', adminSettingsRouter);
+
+export default adminRouter;
+export { adminRouter };
+export * from './dashboard';
+export * from './users';
+export * from './stores';
+export * from './transactions';
+export * from './revenue';
+export * from './printers';
+export * from './support';
+export * from './analytics';
+export * from './access';
+export * from './auditLogs';
+export * from './settings';
+export * from './auth/adminAuth.types';
