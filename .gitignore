@@ -25,6 +25,8 @@ out/
 **/.env.*.local
 config/config.json
 **/config/config.json
+config/recovery.json
+**/config/recovery.json
 
 # Logs
 logs/

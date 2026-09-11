@@ -34,20 +34,76 @@ const VIRTUAL_PRINTER_NAMES = [
   'microsoft print to pdf',
   'microsoft xps document writer',
   'microsoft xps',
+  'xps document writer',
   'fax',
   'onenote',
   'onenote (desktop)',
   'onenote for windows 10',
   'send to onenote',
-  'send to microsoft onenote'
+  'send to microsoft onenote',
+  'adobe pdf',
+  'cutepdf',
+  'foxit',
+  'foxit reader',
+  'foxit phantom',
+  'bullzip',
+  'nitro pdf',
+  'primopdf',
+  'pdfcreator',
+  'dopdf',
+  'novapdf',
+  'pdf24',
+  'wondershare pdf',
+  'virtual printer',
+  'pdf printer',
+  'print to file'
 ];
 
 /**
- * Checks if a printer is a virtual Windows printer.
+ * Checks if a printer is a virtual Windows device, software converter, or redirected session.
  */
-export function isVirtualPrinter(printerName: string): boolean {
-  const normalized = printerName.toLowerCase().trim();
-  return VIRTUAL_PRINTER_NAMES.some((v) => normalized.includes(v));
+export function isVirtualPrinter(printerName: string, driverName?: string, portName?: string): boolean {
+  const name = (printerName || '').toLowerCase().trim();
+  const driver = (driverName || '').toLowerCase().trim();
+  const port = (portName || '').toLowerCase().trim();
+
+  // 1. Virtual printer names / software writer signatures
+  if (VIRTUAL_PRINTER_NAMES.some((v) => name.includes(v))) {
+    return true;
+  }
+
+  // 2. Remote Desktop / Terminal Services redirected printers (e.g., "HP LaserJet (redirected 1)")
+  if (name.includes('redirected') || name.includes('session ') || port.startsWith('ts') || port.startsWith('rdp')) {
+    return true;
+  }
+
+  // 3. Virtual file-sink ports (FILE:, PORTPROMPT:, NUL:)
+  if (
+    port.startsWith('portprompt') ||
+    port.startsWith('file:') ||
+    port === 'file' ||
+    port.startsWith('nul:') ||
+    port === 'nul'
+  ) {
+    return true;
+  }
+
+  // 4. Virtual driver signatures
+  if (
+    driver.includes('print to pdf') ||
+    driver.includes('xps document writer') ||
+    driver.includes('adobe pdf') ||
+    driver.includes('cutepdf') ||
+    driver.includes('pdf converter') ||
+    driver.includes('virtual driver') ||
+    driver.includes('distiller') ||
+    driver.includes('pdfcreator') ||
+    driver.includes('foxit')
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -205,8 +261,8 @@ export function generatePrinterId(name: string, portName?: string, deviceId?: st
 export async function mapRawToPrinter(raw: RawPrinterData): Promise<Printer | null> {
   if (!raw || !raw.Name) return null;
 
-  // Filter virtual printers unless explicitly allowed
-  if (!env.INCLUDE_VIRTUAL_PRINTERS && isVirtualPrinter(raw.Name)) {
+  // Strictly filter out all virtual printers and software document converters
+  if (isVirtualPrinter(raw.Name, raw.DriverName, raw.PortName)) {
     return null;
   }
 

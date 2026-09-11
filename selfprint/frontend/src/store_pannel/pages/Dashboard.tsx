@@ -84,10 +84,13 @@ export const StoreDashboard: React.FC = () => {
     refetchAll
   } = useStoreDashboard(undefined, selectedQueueTab);
 
-  // Printer Monitoring & Detection Hook
+  // Printer Monitoring & Detection Hook (realtime port 4500 + Socket.IO)
   const {
     activePrinter,
     setActivePrinter,
+    isConnectorOnline,
+    connectionState,
+    checkHost,
     notifications: hardwareNotifications,
     dismissNotification,
     triggerMockEvent,
@@ -204,6 +207,7 @@ export const StoreDashboard: React.FC = () => {
             isPrinterOnline={printerStatus.isOnline}
             isPrinterConfigured={printerStatus.isConfigured}
             isPaused={isPaused}
+            connectionState={connectionState}
             notificationsList={liveNotifications}
             unreadCount={unreadCount}
             onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
@@ -262,12 +266,15 @@ export const StoreDashboard: React.FC = () => {
                 <div className="lg:col-span-4 flex flex-col">
                   <PrinterStatusMonitor
                     printer={
-                      (dashboardData?.store?.printerConfigured ?? printerStatus.isConfigured)
+                      isConnectorOnline && (dashboardData?.store?.printerConfigured ?? printerStatus.isConfigured)
                         ? (activePrinter.id ? activePrinter : (printerStatus as any))
                         : (printerStatus as any)
                     }
                     isConfigured={dashboardData?.store?.printerConfigured ?? printerStatus.isConfigured}
                     isPaused={isPaused}
+                    isConnectorOnline={isConnectorOnline}
+                    connectionState={connectionState}
+                    onRefreshConnector={checkHost}
                     onTogglePause={handleTogglePause}
                     onOpenWizard={() => setIsPrinterWizardOpen(true)}
                     onRunTestPrint={async () => {

@@ -14,36 +14,61 @@ The **SelfPrint Connector** is a production-grade Windows background service. It
 
 ## 🏛️ End-to-End System Topology
 
-```mermaid
-flowchart TD
-    subgraph Cloud[SelfPrint Cloud Platform]
-        Backend[Node.js Backend & MongoDB]
-        Dashboard[Store Web App / Admin Dashboard]
-        Backend <--> Dashboard
-    end
-
-    subgraph Host[Local Windows Host Machine]
-        subgraph CoreDaemon[SelfPrint Connector Daemon]
-            WSSocket[WebSocket Client with Reconnect Ladder]
-            JobExec[Print Job Executor & Sandbox Downloader]
-            SpoolWatcher[Spooler Watcher & Job Queue]
-            HealthMon[60s Health & Telemetry Monitor]
-            CrashRec[Crash Recovery Checkpoint Manager]
-            OfflineQ[Offline Print Queue]
-            RotLog[Rotating Logger: Daily & 10MB Split]
-            UpdateArch[Self Update Architecture]
-            LocalAPI[Diagnostic REST API Port 4500]
-        end
-
-        TrayApp[Windows System Tray Companion]
-        WinSpooler[Windows Print Spooler: spoolsv.exe]
-        Printers[Physical USB / Network Printers]
-    end
-
-    Backend <== WebSocket / TLS & REST ==> WSSocket
-    JobExec --> WinSpooler --> Printers
-    TrayApp <--> CoreDaemon
+```text
+Customer
+        │
+        ▼
+Customer Web App (Browser)
+        │
+        ▼
+SelfPrint Cloud Backend
+        ▲
+        │
+Store Dashboard (Browser)
+        │
+        ▼
+SelfPrint Cloud Backend
+        ▲
+        │
+Admin Dashboard (Browser)
+        │
+        ▼
+SelfPrint Cloud Backend
+        ▲
+        │
+══════════════════════════════════════════════════════════════════
+        │ (WebSocket + REST)
+        ▼
+SelfPrint Connector Desktop App (Local Electron Companion)
+        │ (Local REST http://127.0.0.1:4500)
+        ▼
+Local Connector Service (Windows Background Daemon)
+        │ (WMI / PowerShell / Native CLI)
+        ▼
+Windows Print Spooler (spoolsv.exe)
+        │
+        ▼
+Physical Printers (USB / Network / Thermal / Laser)
 ```
+
+> **Isolation Rule**: The browser never directly interacts with or controls Electron. All web clients communicate strictly through the Cloud Backend. The Desktop App launches only from Windows shortcuts, System Tray, Startup, or explicit `selfprint://connector/*` deep-links.
+
+---
+
+## 🔗 Deep Linking Protocol Specification (`selfprint://connector/*`)
+
+The custom protocol scheme is strictly isolated to connector-specific routes:
+
+| Protocol URL | Target UI Tab | Description |
+| :--- | :--- | :--- |
+| `selfprint://connector` | Dashboard | Focuses desktop app and shows dashboard |
+| `selfprint://connector/dashboard` | Dashboard | Navigates to System Telemetry & Overview |
+| `selfprint://connector/printers` | Printers | Navigates to Hardware Printer Fleet Grid |
+| `selfprint://connector/settings` | Settings | Navigates to Configuration & Polling Setup |
+| `selfprint://connector/activity` | Activity | Navigates to Print Job History & Audit Feed |
+| `selfprint://connector/notifications` | Notifications | Navigates to Notifications Center |
+
+> **Security & Independence Note**: Any URL that does not start with `selfprint://connector` or targets arbitrary browser/HTTP routes is strictly ignored. The Desktop App does not hook browser navigation or intercept localhost HTTP requests.
 
 ---
 

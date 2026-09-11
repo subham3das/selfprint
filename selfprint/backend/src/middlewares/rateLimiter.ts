@@ -4,13 +4,29 @@ import { HTTP_STATUS } from '../constants/httpStatusCodes';
 import { ERROR_CODES } from '../constants/errorCodes';
 
 /**
- * Standard API rate limiter: 300 requests per 15 minutes
+ * Standard API rate limiter: 1500 requests per 15 minutes in prod, generous in dev.
+ * Connector heartbeats, status polling, token verification, and health probes are explicitly exempt.
  */
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: process.env.NODE_ENV === 'production' ? 1500 : 10000,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    const url = req.originalUrl || req.url || '';
+    // Never throttle connector heartbeats, status checks, pairing, token verification, or health probes
+    if (url.includes('/connectors') || url.includes('/health')) {
+      return true;
+    }
+    // In local development, do not throttle loopback addresses
+    if (process.env.NODE_ENV !== 'production') {
+      const ip = req.ip || req.socket.remoteAddress || '';
+      if (ip === '127.0.0.1' || ip === '::1' || ip.includes('127.0.0.1') || ip === '::ffff:127.0.0.1') {
+        return true;
+      }
+    }
+    return false;
+  },
   handler: (_req, res) => {
     ApiResponse.error(
       res,

@@ -22,9 +22,11 @@ export const useStoreSession = (): StoreInfo => {
       };
     }
 
+    const resolvedId = stored.storeId || (stored as any).id || (stored as any)._id || storeAuthService.getStoreId() || '';
+
     return {
-      id: stored.storeId || '',
-      name: stored.storeName || 'Store Partner',
+      id: resolvedId,
+      name: stored.storeName || (stored as any).name || 'Store Partner',
       location: [stored.city, stored.state].filter(Boolean).join(', ') || 'No location configured',
       storeCode: (stored as any).storeCode || 'SP-0000',
       ownerName: stored.ownerName || '—',

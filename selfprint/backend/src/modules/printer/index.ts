@@ -17,7 +17,8 @@ printerRouter.post('/save', authenticate, validateRequest(savePrinterSchema), pr
 printerRouter.patch('/:id/status', authenticate, validateRequest(updatePrinterStatusSchema), printerController.updatePrinterStatus);
 printerRouter.delete('/:id', authenticate, printerController.deletePrinter);
 
-// Host Bridge Pairing & Heartbeat Telemetry
+// Host Bridge Pairing & Heartbeat Telemetry & Physical Printer Sync
+printerRouter.post('/sync', printerController.syncPrinters);
 printerRouter.post('/host/pair', authenticate, validateRequest(pairHostSchema), printerController.pairHost);
 printerRouter.post('/host/heartbeat', authenticate, validateRequest(hostHeartbeatSchema), printerController.processHeartbeat);
 

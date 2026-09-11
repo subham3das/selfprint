@@ -39,6 +39,10 @@ export const storeAuthService = {
     try {
       localStorage.setItem('selfprint_store_token', token);
       localStorage.setItem('selfprint_registered_store', JSON.stringify(store));
+      const resolvedStoreId = store.id || (store as any)._id || store.storeCode;
+      if (resolvedStoreId) {
+        localStorage.setItem('selfprint_store_id', resolvedStoreId);
+      }
     } catch (err) {
       console.warn('LocalStorage error:', err);
     }
@@ -59,6 +63,28 @@ export const storeAuthService = {
       },
       message: response.data.message
     };
+  },
+
+  /**
+   * Retrieve active store ID reliably
+   */
+  getStoreId(): string | null {
+    try {
+      const direct = localStorage.getItem('selfprint_store_id');
+      if (direct && direct.trim().length > 0) return direct.trim();
+      const raw = localStorage.getItem('selfprint_registered_store');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const id = parsed.storeId || parsed.id || parsed._id;
+        if (id) {
+          localStorage.setItem('selfprint_store_id', id);
+          return id;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
   },
 
   /**
@@ -91,6 +117,7 @@ export const storeAuthService = {
     try {
       localStorage.removeItem('selfprint_store_token');
       localStorage.removeItem('selfprint_registered_store');
+      localStorage.removeItem('selfprint_store_id');
     } catch (err) {
       console.warn('LocalStorage logout error:', err);
     }

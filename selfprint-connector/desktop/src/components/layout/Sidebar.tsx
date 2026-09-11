@@ -8,7 +8,9 @@ import {
   Info,
   Sun,
   Moon,
-  Radio
+  Radio,
+  WifiOff,
+  Loader2
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { NavigationTab } from '../../types';
@@ -19,6 +21,8 @@ export const Sidebar: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const notifications = useAppStore((s) => s.notifications);
+  const isLocalConnected = useAppStore((s) => s.isLocalConnected);
+  const isSocketReconnecting = useAppStore((s) => s.isSocketReconnecting);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -79,12 +83,26 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* Footer Controls: Live Status & Theme */}
+      {/* Footer Controls */}
       <div className="pt-3 border-t border-slate-800/80 space-y-2">
         <div className="px-3 py-2 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[11px] text-slate-400">
-            <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-            <span>Port 4500</span>
+          <div className="flex items-center gap-2 text-[11px]">
+            {isSocketReconnecting ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                <span className="text-amber-400 font-medium">Reconnecting...</span>
+              </>
+            ) : isLocalConnected ? (
+              <>
+                <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                <span className="text-slate-400">Port 4500</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3.5 h-3.5 text-red-400" />
+                <span className="text-red-400">Host Offline</span>
+              </>
+            )}
           </div>
           <button
             onClick={toggleTheme}

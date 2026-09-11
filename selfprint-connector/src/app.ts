@@ -64,8 +64,7 @@ async function bootstrap(): Promise<void> {
     // 2. Perform Crash Recovery from previous session
     await crashRecovery.performRecovery();
 
-    // 3. Ensure Device Registration & Obtain JWT Token
-    await registrationService.ensureRegistered();
+
 
     // 4. Start Local Hardware Printer Detection & 30s Watcher
     await syncService.start();

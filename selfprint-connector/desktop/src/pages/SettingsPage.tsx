@@ -20,7 +20,7 @@ export const SettingsPage: React.FC = () => {
   const showToast = useAppStore((s) => s.showToast);
   const addActivity = useAppStore((s) => s.addActivity);
 
-  const [backendUrl, setBackendUrl] = useState('http://localhost:3000');
+  const [backendUrl, setBackendUrl] = useState('http://localhost:5000');
   const [heartbeatInterval, setHeartbeatInterval] = useState(15);
   const [scanInterval, setScanInterval] = useState(30);
   const [logLevel, setLogLevel] = useState('INFO');
@@ -54,7 +54,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleResetDefaults = () => {
-    setBackendUrl('http://localhost:3000');
+    setBackendUrl('http://localhost:5000');
     setHeartbeatInterval(15);
     setScanInterval(30);
     setLogLevel('INFO');

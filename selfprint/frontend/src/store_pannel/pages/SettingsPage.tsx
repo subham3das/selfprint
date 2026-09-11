@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import {
@@ -9,6 +9,7 @@ import {
 import { StoreInfoCard } from '../components/settings/StoreInfoCard';
 import { StoreBrandingCard } from '../components/settings/StoreBrandingCard';
 import { PrinterConfigCard } from '../components/settings/PrinterConfigCard';
+import { PrinterConnectorSettingsCard } from '../components/settings/PrinterConnectorSettingsCard';
 import { PricingConfigCard } from '../components/settings/PricingConfigCard';
 import { PaymentSettingsCard } from '../components/settings/PaymentSettingsCard';
 import { PreferencesCard } from '../components/settings/PreferencesCard';
@@ -66,7 +67,9 @@ export const SettingsPage: React.FC = () => {
   const { dashboardData } = useStoreDashboard();
 
   const settings = serverSettings || emptyStoreSettings;
-  const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>('store');
+  const [searchParams] = useSearchParams();
+  const initialCategory = (searchParams.get('category') as SettingsCategoryId) || 'store';
+  const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>(initialCategory);
 
   // Sidebar & Layout State
   const [activeNav, setActiveNav] = useState('settings');
@@ -230,45 +233,56 @@ export const SettingsPage: React.FC = () => {
 
           {/* Main 3-Column Masonry Grid Matching Reference Image */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Column 1 (Left 3.5 cols): Category List & Printer Settings */}
+            {/* Column 1 (Left 4 cols): Category List & Printer Settings */}
             <div className="lg:col-span-4 space-y-6">
               <SettingsNavCard
                 activeCategory={activeCategory}
                 onSelectCategory={handleSelectCategory}
               />
 
-              <PrinterConfigCard
-                printer={settings.printer}
-                onSave={handleSavePrinter}
-              />
+              {activeCategory !== 'connector' && (
+                <PrinterConfigCard
+                  printer={settings.printer}
+                  onSave={handleSavePrinter}
+                />
+              )}
             </div>
 
-            {/* Column 2 (Center 4.5 cols): Store Settings & Pricing */}
-            <div className="lg:col-span-4 space-y-6">
-              <StoreInfoCard
-                general={settings.general}
-                onSave={handleSaveGeneral}
-              />
+            {activeCategory === 'connector' ? (
+              /* Dedicated Printer Connector View */
+              <div className="lg:col-span-8 space-y-6">
+                <PrinterConnectorSettingsCard />
+              </div>
+            ) : (
+              <>
+                {/* Column 2 (Center 4 cols): Store Settings & Pricing */}
+                <div className="lg:col-span-4 space-y-6">
+                  <StoreInfoCard
+                    general={settings.general}
+                    onSave={handleSaveGeneral}
+                  />
 
-              <PricingConfigCard
-                pricing={settings.pricing}
-                onSave={handleSavePricing}
-              />
-            </div>
+                  <PricingConfigCard
+                    pricing={settings.pricing}
+                    onSave={handleSavePricing}
+                  />
+                </div>
 
-            {/* Column 3 (Right 4 cols): Branding/QR & Payment Settings */}
-            <div className="lg:col-span-4 space-y-6">
-              <StoreBrandingCard
-                storeName={settings.general.storeName || storeInfo.name}
-                storeLocation={settings.general.storeLocation || storeInfo.location}
-                onOpenQRStandeeModal={() => setIsQRPosterModalOpen(true)}
-              />
+                {/* Column 3 (Right 4 cols): Branding/QR & Payment Settings */}
+                <div className="lg:col-span-4 space-y-6">
+                  <StoreBrandingCard
+                    storeName={settings.general.storeName || storeInfo.name}
+                    storeLocation={settings.general.storeLocation || storeInfo.location}
+                    onOpenQRStandeeModal={() => setIsQRPosterModalOpen(true)}
+                  />
 
-              <PaymentSettingsCard
-                payment={settings.payment}
-                onSave={handleSavePayment}
-              />
-            </div>
+                  <PaymentSettingsCard
+                    payment={settings.payment}
+                    onSave={handleSavePayment}
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           {/* Bottom Row: Full Width Preferences Card */}

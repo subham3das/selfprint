@@ -17,3 +17,5 @@ export * from './staff.model';
 export * from './role.model';
 export * from './invitation.model';
 export * from './platformSettings.model';
+export * from './pairingCode.model';
+export * from './connector.model';

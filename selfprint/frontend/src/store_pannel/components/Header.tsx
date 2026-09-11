@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { StoreInfo, NotificationItem } from '../types/dashboard.types';
+import { ConnectionState, RealtimeConnectionState } from '../hooks/usePrinterMonitoring';
 
 interface HeaderProps {
   title?: string;
@@ -19,6 +20,7 @@ interface HeaderProps {
   isPrinterOnline: boolean;
   isPrinterConfigured?: boolean;
   isPaused: boolean;
+  connectionState?: RealtimeConnectionState;
   notificationsList?: NotificationItem[];
   unreadCount?: number;
   onOpenMobileSidebar?: () => void;
@@ -33,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   isPrinterOnline,
   isPrinterConfigured,
   isPaused,
+  connectionState,
   notificationsList,
   unreadCount = 0,
   onOpenMobileSidebar,
@@ -43,6 +46,55 @@ export const Header: React.FC<HeaderProps> = ({
   const [showStoreDropdown, setShowStoreDropdown] = useState(false);
 
   const activeNotifications = notificationsList || [];
+
+  // Live Status Indicator determination (instantly updated via Socket.IO & Backend)
+  const getLiveIndicator = () => {
+    const state: ConnectionState = connectionState || (isPrinterOnline ? 'CONNECTED' : 'OFFLINE');
+    switch (state) {
+      case 'CONNECTED':
+      case 'READY':
+      case 'HOST_RUNNING':
+      case 'SCANNING':
+        return {
+          label: 'Connected',
+          dotClass: 'bg-emerald-500',
+          pingClass: 'bg-emerald-400',
+          badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
+          emoji: '🟢'
+        };
+      case 'AUTHENTICATING':
+      case 'PAIRING':
+        return {
+          label: 'Connecting',
+          dotClass: 'bg-amber-500',
+          pingClass: 'bg-amber-400',
+          badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+          emoji: '🟡'
+        };
+      case 'RECONNECTING':
+        return {
+          label: 'Reconnecting',
+          dotClass: 'bg-orange-500',
+          pingClass: 'bg-orange-400',
+          badgeClass: 'bg-orange-50 text-orange-700 border-orange-200',
+          emoji: '🟠'
+        };
+      case 'NOT_PAIRED':
+      case 'NOT_INSTALLED':
+      case 'OFFLINE':
+      case 'ERROR':
+      default:
+        return {
+          label: 'Offline',
+          dotClass: 'bg-rose-500',
+          pingClass: 'bg-rose-400',
+          badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
+          emoji: '🔴'
+        };
+    }
+  };
+
+  const liveIndicator = getLiveIndicator();
 
   const isConfigured =
     isPrinterConfigured !== undefined
@@ -86,7 +138,19 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right Actions */}
-      <div className="flex items-center gap-3 self-start sm:self-auto">
+      <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+        {/* Live Status Indicator (Socket.IO Real-time Bridge State) */}
+        <div
+          title={`Connector Status: ${liveIndicator.label}`}
+          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border shadow-2xs transition-all ${liveIndicator.badgeClass}`}
+        >
+          <span className="relative flex h-2 w-2">
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${liveIndicator.pingClass}`} />
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${liveIndicator.dotClass}`} />
+          </span>
+          <span>{liveIndicator.label}</span>
+        </div>
+
         {/* Status Badge */}
         {!isConfigured ? (
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border bg-slate-100 text-slate-600 border-slate-200/80">

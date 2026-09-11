@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "desktop": "concurrently \"vite\" \"electron .\""
+    "desktop": "npm run build:electron && concurrently -k \"vite\" \"electron .\""
   },
   "dependencies": {
     "@tanstack/react-query": "^5.66.0",

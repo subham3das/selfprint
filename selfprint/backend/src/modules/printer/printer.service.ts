@@ -1,6 +1,10 @@
+import mongoose from 'mongoose';
 import { printerRepository, PrinterRepository } from './printer.repository';
 import { SavePrinterDto, PairHostDto, HostHeartbeatDto, PrinterResponseDto } from './printer.types';
-import { IPrinter, PrinterStatusType } from '../../models/printer.model';
+import { PrinterModel, IPrinter, PrinterStatusType } from '../../models/printer.model';
+import { HostModel } from '../../models/host.model';
+import { StoreModel } from '../../models/store.model';
+import { socketManager } from '../../socket';
 import { NotFoundError } from '../../errors';
 
 export class PrinterService {
@@ -78,6 +82,112 @@ export class PrinterService {
       acknowledged: true,
       timestamp: new Date().toISOString()
     };
+  }
+
+  /**
+   * Synchronizes detected physical printers from desktop connector into MongoDB
+   * and broadcasts realtime Socket.IO updates to the store's dashboard.
+   */
+  public async syncPrinters(
+    storeId: string,
+    connectorId: string,
+    machineId: string,
+    rawPrinters: any[]
+  ): Promise<{ syncedCount: number; printers: PrinterResponseDto[] }> {
+    let targetStoreId = storeId;
+    if (!targetStoreId && connectorId) {
+      const host = await HostModel.findOne({ hostId: connectorId }).lean();
+      if (host) {
+        targetStoreId = host.storeId.toString();
+      } else {
+        const store = await StoreModel.findOne().lean();
+        if (store) {
+          targetStoreId = store._id.toString();
+        }
+      }
+    }
+
+    if (!targetStoreId) {
+      return { syncedCount: 0, printers: [] };
+    }
+
+    const sId = new mongoose.Types.ObjectId(targetStoreId);
+    const syncedPrinters: IPrinter[] = [];
+
+    for (let i = 0; i < (rawPrinters || []).length; i++) {
+      const p = rawPrinters[i];
+      const printerName = p.name || p.printerName;
+      if (!printerName) continue;
+
+      const deviceId = p.id || p.deviceId || `prn_${printerName}`;
+      const isDefault = p.isDefault ?? (i === 0);
+
+      const saved = await PrinterModel.findOneAndUpdate(
+        { storeId: sId, $or: [{ deviceId }, { printerName }] },
+        {
+          $set: {
+            storeId: sId,
+            deviceId,
+            printerName,
+            model: p.model || printerName,
+            brand: p.brand || p.manufacturer || 'Generic',
+            driver: p.driver || p.driverName || 'Generic Driver',
+            port: p.port || p.portName || 'USB001',
+            connectionType: (p.connectionType || p.connection || 'USB').toUpperCase(),
+            status: p.status === 'Offline' ? 'OFFLINE' : 'ONLINE',
+            isDefault,
+            paperLevel: p.paperLevel ?? 90,
+            tonerLevel: typeof p.inkLevels?.black === 'number' ? p.inkLevels.black : (p.tonerLevel ?? 85),
+            capabilities: {
+              isColor: Boolean(p.isColor || p.colorSupport),
+              isDuplex: Boolean(p.isDuplexSupported || p.duplexSupport),
+              isAutoCut: Boolean(p.isAutoCutSupported),
+              paperSizes: Array.isArray(p.paperSizes) ? p.paperSizes : ['A4', 'Letter']
+            },
+            lastHeartbeat: new Date(),
+            lastSeen: new Date()
+          }
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      if (saved) {
+        syncedPrinters.push(saved);
+      }
+    }
+
+    if (syncedPrinters.length > 0) {
+      await StoreModel.findByIdAndUpdate(sId, {
+        $set: { printerConfigured: true, isFirstLogin: false }
+      });
+    }
+
+    const formatted = syncedPrinters.map(p => this.formatPrinterDto(p));
+
+    // Realtime Socket.IO Broadcast to Store Dashboard
+    socketManager.emitToStore(targetStoreId, 'printer_synced', {
+      storeId: targetStoreId,
+      connectorId,
+      machineId,
+      printers: formatted,
+      count: formatted.length,
+      timestamp: new Date().toISOString()
+    });
+
+    socketManager.emitToStore(targetStoreId, 'connector_status', {
+      status: 'Ready',
+      connectorId,
+      printerCount: formatted.length,
+      timestamp: new Date().toISOString()
+    });
+
+    socketManager.emitToStore(targetStoreId, 'printer_notification', {
+      type: 'success',
+      title: 'Connector Online',
+      message: `Synchronized ${formatted.length} physical printer(s) from local Windows connector.`,
+      timestamp: new Date().toISOString()
+    });
+
+    return { syncedCount: formatted.length, printers: formatted };
   }
 
   private formatPrinterDto(p: IPrinter): PrinterResponseDto {

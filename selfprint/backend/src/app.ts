@@ -21,10 +21,29 @@ export const createApp = (): Application => {
   // CORS Configuration
   app.use(
     cors({
-      origin: env.CORS_ORIGIN,
+      origin: (origin, callback) => {
+        // Allow requests with no origin (e.g. mobile apps, curl, electron file://, host-service)
+        if (!origin) return callback(null, true);
+
+        // Allow localhost and 127.0.0.1 on any port (for Vite dev servers :5173, :5174, host service :4500)
+        if (
+          /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+          origin.startsWith('file://') ||
+          origin.startsWith('vscode-webview://')
+        ) {
+          return callback(null, true);
+        }
+
+        const allowed = Array.isArray(env.CORS_ORIGIN) ? env.CORS_ORIGIN : [env.CORS_ORIGIN];
+        if (allowed.includes('*') || allowed.includes(origin)) {
+          return callback(null, true);
+        }
+
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-device-token']
     })
   );
 

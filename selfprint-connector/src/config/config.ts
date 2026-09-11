@@ -25,7 +25,7 @@ export interface JsonConfigFile {
 }
 
 const DEFAULT_JSON_CONFIG: JsonConfigFile = {
-  backendUrl: 'http://localhost:3000',
+  backendUrl: 'http://localhost:5000',
   deviceId: '',
   deviceToken: '',
   storeId: '',

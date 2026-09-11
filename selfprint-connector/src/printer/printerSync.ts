@@ -24,7 +24,13 @@ export async function syncPrintersToBackend(printers: Printer[]): Promise<boolea
     await registrationService.ensureRegistered();
   }
 
-  // Also emit via WebSocket
+  // Also emit status and sync via WebSocket
+  emitEvent('connector_status', {
+    connectorId: data.connectorId,
+    status: 'Synchronizing',
+    timestamp: new Date().toISOString()
+  });
+
   emitEvent('printer_sync', {
     connectorId: data.connectorId,
     machineId: data.machineId,
@@ -32,7 +38,8 @@ export async function syncPrintersToBackend(printers: Printer[]): Promise<boolea
     timestamp: new Date().toISOString()
   });
 
-  const url = `${data.connectorSettings.backendUrl.replace(/\/$/, '')}/api/v1/connectors/printers/sync`;
+  const baseUrl = data.connectorSettings.backendUrl.replace(/\/$/, '');
+  const url = `${baseUrl}/api/v1/printer/sync`;
   const payload: PrinterSyncPayload = {
     connectorId: data.connectorId,
     machineId: data.machineId,
@@ -60,6 +67,11 @@ export async function syncPrintersToBackend(printers: Printer[]): Promise<boolea
     const duration = Date.now() - startTime;
 
     if (response.ok) {
+      emitEvent('connector_status', {
+        connectorId: data.connectorId,
+        status: 'Ready',
+        timestamp: new Date().toISOString()
+      });
       printerLogger.backendSyncSuccess(printers.length, duration);
       logger.info(`Backend sync success: Synchronized ${printers.length} local printer(s) in ${duration}ms.`);
       return true;

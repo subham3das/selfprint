@@ -1,6 +1,6 @@
 import { connectorStore } from '../storage/connectorStore';
 import { logger } from '../utils/logger';
-import { emitEvent } from '../websocket/socket';
+import { emitEvent, isSocketConnected } from '../websocket/socket';
 import { printerCache } from '../printer/printerCache';
 import { registrationService } from './registration.service';
 import { healthMonitor } from './healthMonitor';
@@ -14,10 +14,7 @@ export async function sendHeartbeat(): Promise<void> {
   const data = connectorStore.getData();
   const identity = connectorStore.getIdentity();
 
-  // If token is missing, attempt registration first
-  if (!connectorStore.isRegistered()) {
-    await registrationService.ensureRegistered();
-  }
+
 
   const health = (await healthMonitor.collectHealthMetrics()) || {
     cpuUsagePercent: 0,
@@ -33,11 +30,27 @@ export async function sendHeartbeat(): Promise<void> {
     timestamp: new Date().toISOString()
   };
 
+  const socketConnected = isSocketConnected();
+  const authenticated = connectorStore.isRegistered();
+  const physicalPrinters = printerCache.getAll();
+  const physicalPrinterCount = physicalPrinters.length;
+
   const payload = {
+    deviceToken: data.deviceToken || undefined,
     connectorId: data.connectorId,
+    storeId: data.storeId || undefined,
+    socketConnected,
+    authenticated,
+    hostRunning: true,
+    physicalPrinters: physicalPrinterCount,
+    physicalPrinterCount,
     machineId: data.machineId,
+    version: identity.connectorVersion,
+    connectorVersion: identity.connectorVersion,
+    latency: health.backendLatencyMs || 0,
     uptime: health.connectorUptimeSeconds,
-    printerCount: health.printerCount,
+    printerCount: physicalPrinterCount,
+    state: (socketConnected && authenticated) ? 'READY' : (authenticated ? 'HOST_RUNNING' : 'NOT_PAIRED'),
     memoryUsage: {
       totalMB: health.memory.totalMB,
       freeMB: health.memory.freeMB,
@@ -47,13 +60,13 @@ export async function sendHeartbeat(): Promise<void> {
     cpuUsage: health.cpuUsagePercent,
     spoolerStatus: health.printSpoolerStatus,
     activeQueueSize: health.activeQueueSize,
-    connectorVersion: identity.connectorVersion
+    timestamp: new Date().toISOString()
   };
 
   // 1. Emit via WebSocket
   const wsSent = emitEvent('heartbeat', {
     ...payload,
-    printers: printerCache.getAll().map((p) => ({
+    printers: physicalPrinters.map((p) => ({
       id: p.id,
       name: p.name,
       isDefault: p.isDefault,
@@ -86,31 +99,30 @@ export async function sendHeartbeat(): Promise<void> {
 
     if (response.ok) {
       connectorStore.updateLastHeartbeat();
-      logger.info('Heartbeat Sent');
+      logger.info('Heartbeat Sent (10s)');
     } else if (response.status === 401) {
-      logger.warn('Heartbeat rejected (401 Unauthorized): Re-registering device token...');
+      logger.warn('Heartbeat rejected (401 Unauthorized): Device token was revoked or unpaired.');
       connectorStore.setDeviceToken('');
-      await registrationService.ensureRegistered();
     }
   } catch (error) {
     if (wsSent) {
       connectorStore.updateLastHeartbeat();
       logger.info('Heartbeat Sent (via WebSocket)');
     } else {
-      logger.debug(`Heartbeat HTTP endpoint unreachable (retrying in 15s): ${error instanceof Error ? error.message : String(error)}`);
+      logger.debug(`Heartbeat HTTP endpoint unreachable (retrying in 10s): ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }
 
 /**
- * Starts the recurring 15-second heartbeat beacon.
+ * Starts the recurring 10-second heartbeat beacon.
  */
 export function startHeartbeat(): void {
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
   }
 
-  const interval = connectorStore.getSettings().heartbeatIntervalMs || 15000;
+  const interval = connectorStore.getSettings().heartbeatIntervalMs || 10000;
   logger.info(`Starting Heartbeat Beacon (Interval: ${interval / 1000}s)...`);
 
   sendHeartbeat();

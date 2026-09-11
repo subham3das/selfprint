@@ -75,6 +75,9 @@ export interface HealthData {
   lastHeartbeat: string | null;
   backendUrl: string;
   isRegistered: boolean;
+  socketConnected?: boolean;
+  storeId?: string | null;
+  storeName?: string | null;
   telemetry?: {
     cpuUsagePercent: number;
     memory: {

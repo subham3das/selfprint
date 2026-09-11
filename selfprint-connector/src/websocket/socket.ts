@@ -44,14 +44,18 @@ export function initSocket(): Socket {
   logger.info(`Connecting Hardware Bridge to Backend at ${connectorSettings.backendUrl}...`);
 
   socket = io(connectorSettings.backendUrl, {
-    auth: {
-      connectorId,
-      machineId,
-      deviceToken: deviceToken || undefined,
-      token: deviceToken || undefined,
-      hostname: identity.hostname,
-      windowsUser: identity.windowsUser,
-      version: identity.connectorVersion
+    auth: (cb) => {
+      const curData = connectorStore.getData();
+      cb({
+        connectorId: curData.connectorId,
+        machineId: curData.machineId,
+        storeId: curData.storeId || undefined,
+        deviceToken: curData.deviceToken || undefined,
+        token: curData.deviceToken || undefined,
+        hostname: identity.hostname,
+        windowsUser: identity.windowsUser,
+        version: identity.connectorVersion
+      });
     },
     transports: ['websocket', 'polling'],
     reconnection: true,
@@ -68,10 +72,14 @@ export function initSocket(): Socket {
     reconnectAttempt = 0;
     logger.info(`Connected to SelfPrint Backend (Socket ID: ${socket?.id})`);
 
+    const curData = connectorStore.getData();
+
     // 1. Emit connector_online
     socket?.emit('connector_online', {
-      connectorId,
-      machineId,
+      connectorId: curData.connectorId,
+      machineId: curData.machineId,
+      storeId: curData.storeId || undefined,
+      deviceToken: curData.deviceToken || undefined,
       hostname: identity.hostname,
       windowsUser: identity.windowsUser,
       version: identity.connectorVersion,
@@ -81,8 +89,9 @@ export function initSocket(): Socket {
     // 2. Emit hardware_ready snapshot
     const currentPrinters = printerCache.getAll();
     socket?.emit('hardware_ready', {
-      connectorId,
-      machineId,
+      connectorId: curData.connectorId,
+      machineId: curData.machineId,
+      storeId: curData.storeId || undefined,
       hostname: identity.hostname,
       printers: currentPrinters,
       timestamp: new Date().toISOString()
@@ -95,6 +104,9 @@ export function initSocket(): Socket {
     offlineQueue.drainQueue().catch((err) => {
       logger.error('Failed to drain offline queue on connect:', err);
     });
+
+    // 5. Send immediate heartbeat beacon
+    sendHeartbeat().catch(() => {});
   });
 
   socket.on('disconnect', (reason: string) => {
@@ -113,6 +125,18 @@ export function initSocket(): Socket {
     isConnected = true;
     reconnectAttempt = 0;
     logger.info(`Reconnected to backend successfully after ${attempt} attempt(s).`);
+    const curData = connectorStore.getData();
+    socket?.emit('connector_online', {
+      connectorId: curData.connectorId,
+      machineId: curData.machineId,
+      storeId: curData.storeId || undefined,
+      deviceToken: curData.deviceToken || undefined,
+      hostname: identity.hostname,
+      windowsUser: identity.windowsUser,
+      version: identity.connectorVersion,
+      timestamp: new Date().toISOString()
+    });
+    sendHeartbeat().catch(() => {});
   });
 
   // =========================================================================
@@ -176,6 +200,15 @@ export function initSocket(): Socket {
   socket.on('restart_connector', () => {
     logger.warn('Received restart_connector command from backend. Restarting daemon...');
     process.exit(0);
+  });
+
+  // 5b. Connector Unpaired / Ownership Revoked
+  socket.on('connector_unpaired', () => {
+    logger.warn('Received connector_unpaired event from backend. Revoking local store ownership...');
+    const d = connectorStore.getData();
+    d.deviceToken = null;
+    delete d.storeId;
+    connectorStore.save();
   });
 
   // 6. Execute Print Job (End-to-End Pipeline with Offline Safety)

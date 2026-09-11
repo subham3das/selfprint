@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { HealthData } from '../types';
 import {
   Printer,
   RefreshCw,
@@ -12,6 +13,7 @@ import {
   AlertTriangle,
   Usb,
   Wifi,
+  WifiOff,
   Share2,
   HardDrive,
   Layers,
@@ -30,32 +32,56 @@ export const PrintersPage: React.FC = () => {
   const queryClient = useQueryClient();
   const showToast = useAppStore((s) => s.showToast);
   const addActivity = useAppStore((s) => s.addActivity);
+  const isSocketReconnecting = useAppStore((s) => s.isSocketReconnecting);
   const [selectedPrinter, setSelectedPrinter] = useState<PrinterDevice | null>(null);
 
-  // 1. Fetch Printers
-  const { data, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ['printers'],
-    queryFn: () => localApi.getPrinters(),
-    refetchInterval: 10000
+  // ─── Step 1: Health Check (every 10 s) ──────────────────────────────────
+  const {
+    data: health,
+    isLoading: isHealthLoading,
+    isError: isHealthError,
+    refetch: refetchHealth,
+    dataUpdatedAt: healthUpdatedAt
+  } = useQuery<HealthData>({
+    queryKey: ['health'],
+    queryFn: (): Promise<HealthData> => localApi.getHealth(),
+    refetchInterval: 10_000,
+    retry: 1
   });
 
-  // 2. Test Print Mutation
+  const hostOnline = !isHealthError && !isHealthLoading && !!health;
+
+  // ─── Step 2: Printers — ONLY when host is confirmed online ────────────────
+  const {
+    data,
+    isLoading: isPrintersLoading,
+    refetch: refetchPrinters,
+    isRefetching
+  } = useQuery({
+    queryKey: ['printers'],
+    queryFn: () => localApi.getPrinters(),
+    refetchInterval: 10_000,
+    enabled: hostOnline,   // strict gate — never fetches if host is offline
+    retry: 0
+  });
+
+  // ─── Test Print Mutation ──────────────────────────────────────────────────
   const testPrintMutation = useMutation({
     mutationFn: (printerName: string) => localApi.triggerTestPrint(printerName),
     onSuccess: (_, printerName) => {
-      showToast('Test Print Sent', `Dispatched test page to ${printerName}.`, 'success');
+      showToast('Test Print Sent', `Host Service dispatched test page to ${printerName}.`, 'success');
       addActivity({
         type: 'PRINT_STARTED',
         title: 'Test Page Dispatched',
-        description: `Local test print page sent to ${printerName}.`
+        description: `Host Service sent test page to ${printerName}.`
       });
     },
     onError: () => {
-      showToast('Test Print Failed', 'Could not queue test print.', 'error');
+      showToast('Test Print Failed', 'Host Service is unreachable. Cannot queue test print.', 'error');
     }
   });
 
-  // 3. Control Printer Mutation (Pause / Resume / Restart)
+  // ─── Control Mutation (Pause / Resume / Restart) ─────────────────────────
   const controlMutation = useMutation({
     mutationFn: ({ action, printerName }: { action: 'pause' | 'resume' | 'restart'; printerName: string }) =>
       localApi.controlPrinter(action, printerName),
@@ -67,47 +93,116 @@ export const PrintersPage: React.FC = () => {
         title: `Printer ${vars.action.toUpperCase()}`,
         description: `Command ${vars.action} sent to ${vars.printerName}.`
       });
+    },
+    onError: () => {
+      showToast('Command Failed', 'Host Service is unreachable. Cannot control printer.', 'error');
     }
   });
 
-  const printers = data?.data || [];
+  // ─── Derived printer list ──────────────────────────────────────────────────
+  // Strictly empty when offline or reconnecting — never show cached or mock data.
+  const printers: PrinterDevice[] = hostOnline && !isSocketReconnecting && Array.isArray(data?.data)
+    ? data!.data
+    : [];
+
+  // Printer action buttons blocked when host is offline OR socket is reconnecting
+  const actionsDisabled = !hostOnline || isSocketReconnecting;
+
+  const lastCheckTime = healthUpdatedAt
+    ? new Date(healthUpdatedAt).toLocaleTimeString()
+    : '—';
 
   const getConnectionIcon = (type: string) => {
     switch (type) {
-      case 'USB':
-        return <Usb className="w-3.5 h-3.5 text-blue-400" />;
+      case 'USB': return <Usb className="w-3.5 h-3.5 text-blue-400" />;
       case 'NETWORK':
-      case 'WIRELESS':
-        return <Wifi className="w-3.5 h-3.5 text-emerald-400" />;
-      case 'SHARED':
-        return <Share2 className="w-3.5 h-3.5 text-purple-400" />;
-      default:
-        return <HardDrive className="w-3.5 h-3.5 text-slate-400" />;
+      case 'WIRELESS': return <Wifi className="w-3.5 h-3.5 text-emerald-400" />;
+      case 'SHARED': return <Share2 className="w-3.5 h-3.5 text-purple-400" />;
+      default: return <HardDrive className="w-3.5 h-3.5 text-slate-400" />;
     }
   };
 
   const getStatusBadge = (printer: PrinterDevice) => {
-    if (!printer.isOnline || printer.status === 'OFFLINE') {
+    if (!printer.isOnline || printer.status === 'OFFLINE')
       return <Badge variant="danger" dot>Offline</Badge>;
-    }
-    if (printer.status === 'PAUSED') {
+    if (printer.status === 'PAUSED')
       return <Badge variant="warning" dot>Paused</Badge>;
-    }
-    if (printer.status === 'PAPER_JAM') {
+    if (printer.status === 'PAPER_JAM')
       return <Badge variant="danger" dot>Paper Jam</Badge>;
-    }
-    if (printer.status === 'OUT_OF_PAPER') {
+    if (printer.status === 'OUT_OF_PAPER')
       return <Badge variant="danger" dot>Out of Paper</Badge>;
-    }
-    if (printer.status === 'LOW_TONER') {
+    if (printer.status === 'LOW_TONER')
       return <Badge variant="warning" dot>Low Toner</Badge>;
-    }
     return <Badge variant="success" dot>Ready</Badge>;
   };
 
+  // ── Full offline wall ──────────────────────────────────────────────────────
+  if (isHealthLoading) {
+    return (
+      <div className="space-y-5 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+            <Printer className="w-5 h-5 text-blue-400" />
+            Installed Printers
+          </h1>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-56 w-full rounded-2xl" />)}
+        </div>
+      </div>
+    );
+  }
+
+  if (isHealthError || !health) {
+    return (
+      <div className="space-y-5 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+            <Printer className="w-5 h-5 text-blue-400" />
+            Installed Printers
+          </h1>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<RefreshCw className="w-3.5 h-3.5" />}
+            onClick={() => refetchHealth()}
+          >
+            Retry Connection
+          </Button>
+        </div>
+
+        {/* Offline wall — zero printers shown */}
+        <Card className="text-center py-14 border-red-500/20 bg-red-950/10">
+          <div className="w-14 h-14 rounded-2xl bg-red-500/10 flex items-center justify-center text-red-400 mx-auto mb-4">
+            <WifiOff className="w-7 h-7" />
+          </div>
+          <h3 className="text-base font-semibold text-red-300">SelfPrint Host Service Not Running</h3>
+          <p className="text-xs text-slate-400 mt-2 max-w-sm mx-auto leading-relaxed">
+            The Desktop UI can only display printers from the local Host Service at{' '}
+            <code className="font-mono text-slate-300">http://127.0.0.1:4500</code>.
+            <br />
+            Please start the SelfPrint Connector service and retry.
+          </p>
+          <p className="text-[11px] text-slate-500 mt-3">Last check: {lastCheckTime}</p>
+          <Button
+            variant="primary"
+            size="sm"
+            className="mt-5"
+            icon={<RefreshCw className="w-3.5 h-3.5" />}
+            onClick={() => refetchHealth()}
+          >
+            Retry
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // ── Host is online — render printer list ──────────────────────────────────
   return (
     <div className="space-y-5 animate-fade-in">
-      {/* Header with Title & Rescan Action */}
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
@@ -115,7 +210,8 @@ export const PrintersPage: React.FC = () => {
             Installed Printers
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Physical and local print devices detected on this Windows computer.
+            Physical print devices reported by{' '}
+            <code className="font-mono text-slate-300">localhost:4500</code>.
           </p>
         </div>
 
@@ -124,44 +220,42 @@ export const PrintersPage: React.FC = () => {
           size="sm"
           icon={<RefreshCw className={`w-3.5 h-3.5 ${isRefetching ? 'animate-spin' : ''}`} />}
           loading={isRefetching}
-          onClick={() => refetch()}
+          onClick={() => refetchPrinters()}
         >
           Rescan Hardware
         </Button>
       </div>
 
       {/* Loading Skeletons */}
-      {isLoading && (
+      {isPrintersLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-56 w-full rounded-2xl" />
-          ))}
+          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-56 w-full rounded-2xl" />)}
         </div>
       )}
 
-      {/* Empty State */}
-      {!isLoading && printers.length === 0 && (
+      {/* Empty State (host online, zero printers returned) */}
+      {!isPrintersLoading && printers.length === 0 && (
         <Card className="text-center py-12">
           <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-500 mx-auto mb-3">
             <Printer className="w-6 h-6" />
           </div>
           <h3 className="text-sm font-semibold text-slate-200">No Printers Detected</h3>
           <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-            Ensure your printer is plugged in via USB or connected to the local Wi-Fi/LAN network, then click Rescan.
+            The Host Service found no Windows printers. Ensure your printer is plugged in and then rescan.
           </p>
           <Button
             variant="primary"
             size="sm"
             className="mt-4"
             icon={<RefreshCw className="w-3.5 h-3.5" />}
-            onClick={() => refetch()}
+            onClick={() => refetchPrinters()}
           >
             Scan for Hardware
           </Button>
         </Card>
       )}
 
-      {/* Grid of Printer Cards */}
+      {/* Printer Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {printers.map((printer) => (
           <Card
@@ -171,19 +265,16 @@ export const PrintersPage: React.FC = () => {
             onClick={() => setSelectedPrinter(printer)}
           >
             <div>
-              {/* Header: Name & Status Badges */}
+              {/* Name & Status */}
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="text-sm font-semibold text-slate-100 truncate group-hover:text-blue-400 transition-colors">
-                      {printer.name}
-                    </h3>
-                  </div>
+                  <h3 className="text-sm font-semibold text-slate-100 truncate group-hover:text-blue-400 transition-colors">
+                    {printer.name}
+                  </h3>
                   <p className="text-[11px] text-slate-500 mt-0.5 truncate font-mono">
                     {printer.driverName || 'Generic Driver'}
                   </p>
                 </div>
-
                 <div className="flex flex-col items-end gap-1">
                   {getStatusBadge(printer)}
                   {printer.isDefault && (
@@ -195,7 +286,7 @@ export const PrintersPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Info Badges */}
+              {/* Info Grid */}
               <div className="grid grid-cols-2 gap-2 my-4 p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 text-[11px]">
                 <div className="flex items-center gap-1.5 text-slate-400">
                   {getConnectionIcon(printer.connectionType)}
@@ -216,8 +307,11 @@ export const PrintersPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Actions Bar */}
-            <div className="flex items-center justify-between gap-1.5 pt-3 border-t border-slate-800/80" onClick={(e) => e.stopPropagation()}>
+            {/* Action Bar */}
+            <div
+              className="flex items-center justify-between gap-1.5 pt-3 border-t border-slate-800/80"
+              onClick={(e) => e.stopPropagation()}
+            >
               <Button
                 variant="outline"
                 size="sm"
@@ -225,6 +319,7 @@ export const PrintersPage: React.FC = () => {
                 icon={<FileText className="w-3 h-3" />}
                 onClick={() => testPrintMutation.mutate(printer.name)}
                 loading={testPrintMutation.isPending}
+                disabled={actionsDisabled}
               >
                 Test Page
               </Button>
@@ -233,9 +328,9 @@ export const PrintersPage: React.FC = () => {
                 <Button
                   variant="success"
                   size="sm"
-                  title="Resume Printer"
                   icon={<Play className="w-3 h-3" />}
                   onClick={() => controlMutation.mutate({ action: 'resume', printerName: printer.name })}
+                  disabled={actionsDisabled}
                 >
                   Resume
                 </Button>
@@ -243,9 +338,9 @@ export const PrintersPage: React.FC = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  title="Pause Printer"
                   icon={<Pause className="w-3 h-3" />}
                   onClick={() => controlMutation.mutate({ action: 'pause', printerName: printer.name })}
+                  disabled={actionsDisabled}
                 >
                   Pause
                 </Button>
@@ -254,9 +349,9 @@ export const PrintersPage: React.FC = () => {
               <Button
                 variant="secondary"
                 size="sm"
-                title="Restart Queue"
                 icon={<RotateCcw className="w-3 h-3" />}
                 onClick={() => controlMutation.mutate({ action: 'restart', printerName: printer.name })}
+                disabled={actionsDisabled}
               >
                 Reset
               </Button>
@@ -265,7 +360,7 @@ export const PrintersPage: React.FC = () => {
         ))}
       </div>
 
-      {/* Printer Details Drawer/Modal */}
+      {/* Printer Detail Modal */}
       {selectedPrinter && (
         <Modal
           isOpen={Boolean(selectedPrinter)}
@@ -275,7 +370,6 @@ export const PrintersPage: React.FC = () => {
           maxWidth="xl"
         >
           <div className="space-y-4">
-            {/* Quick Badges */}
             <div className="flex flex-wrap items-center gap-2">
               {getStatusBadge(selectedPrinter)}
               {selectedPrinter.isDefault && <Badge variant="purple">Default Windows Printer</Badge>}
@@ -283,7 +377,6 @@ export const PrintersPage: React.FC = () => {
               <Badge variant="outline">{selectedPrinter.resolution || '600x600 DPI'}</Badge>
             </div>
 
-            {/* Properties Table */}
             <div className="rounded-xl bg-slate-950 border border-slate-800 divide-y divide-slate-800/80 text-xs">
               <div className="p-3 flex justify-between">
                 <span className="text-slate-400">Driver Name:</span>
@@ -307,23 +400,20 @@ export const PrintersPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Paper Sizes */}
             <div>
               <h4 className="text-xs font-semibold text-slate-300 mb-2">Supported Paper Sizes</h4>
               <div className="flex flex-wrap gap-1.5">
-                {selectedPrinter.paperSizes && selectedPrinter.paperSizes.length > 0 ? (
-                  selectedPrinter.paperSizes.map((size) => (
-                    <span key={size} className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-[11px] font-mono border border-slate-700/60">
-                      {size}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-xs text-slate-500">Standard formats: A4, Letter, Legal</span>
-                )}
+                {selectedPrinter.paperSizes && selectedPrinter.paperSizes.length > 0
+                  ? selectedPrinter.paperSizes.map((size) => (
+                      <span key={size} className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-[11px] font-mono border border-slate-700/60">
+                        {size}
+                      </span>
+                    ))
+                  : <span className="text-xs text-slate-500">Standard formats: A4, Letter, Legal</span>
+                }
               </div>
             </div>
 
-            {/* Capabilities */}
             {selectedPrinter.capabilities && selectedPrinter.capabilities.length > 0 && (
               <div>
                 <h4 className="text-xs font-semibold text-slate-300 mb-2">Hardware Capabilities</h4>
@@ -337,7 +427,6 @@ export const PrintersPage: React.FC = () => {
               </div>
             )}
 
-            {/* Modal Bottom Actions */}
             <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800">
               <Button
                 variant="primary"

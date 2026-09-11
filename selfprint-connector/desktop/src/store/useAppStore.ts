@@ -8,6 +8,10 @@ export interface ToastItem {
   severity: NotificationSeverity;
 }
 
+import { ConnectionState } from '../types/connectionState';
+export type { ConnectionState };
+export type RealtimeConnectionState = ConnectionState;
+
 interface AppState {
   activeTab: NavigationTab;
   theme: 'dark' | 'light';
@@ -16,6 +20,10 @@ interface AppState {
   toasts: ToastItem[];
   isLocalConnected: boolean;
   isBackendConnected: boolean;
+  /** Standardized connection state across Web and Desktop */
+  connectionState: RealtimeConnectionState;
+  /** True while the WebSocket is actively trying to reconnect after a drop */
+  isSocketReconnecting: boolean;
 
   // Actions
   setActiveTab: (tab: NavigationTab) => void;
@@ -29,7 +37,11 @@ interface AppState {
   addActivity: (activity: Omit<ActivityEvent, 'id' | 'timestamp'>) => void;
   showToast: (title: string, message: string, severity?: NotificationSeverity) => void;
   removeToast: (id: string) => void;
-  setConnectionStatus: (local: boolean, backend?: boolean) => void;
+  setConnectionStatus: (local?: boolean, backend?: boolean) => void;
+  setLocalConnected: (local: boolean) => void;
+  setBackendConnected: (backend: boolean) => void;
+  setConnectionState: (state: RealtimeConnectionState) => void;
+  setSocketReconnecting: (reconnecting: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -38,9 +50,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   notifications: [
     {
       id: 'n_initial_1',
-      title: 'Connector Initialized',
-      message: 'SelfPrint Hardware Bridge started successfully in background.',
-      severity: 'success',
+      title: 'Desktop UI Started',
+      message: 'Waiting for SelfPrint Host Service on localhost:4500...',
+      severity: 'info',
       timestamp: new Date().toISOString(),
       read: false,
       source: 'CONNECTOR'
@@ -50,14 +62,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     {
       id: 'act_1',
       type: 'CONNECTOR_STARTED',
-      title: 'Bridge Daemon Bootstrapped',
-      description: 'Local printer detection and hardware synchronization started.',
+      title: 'Desktop UI Launched',
+      description: 'Connecting to SelfPrint Host Service at localhost:4500. Printers will appear once the service responds.',
       timestamp: new Date().toISOString()
     }
   ],
   toasts: [],
   isLocalConnected: false,
   isBackendConnected: false,
+  connectionState: 'OFFLINE',
+  isSocketReconnecting: false,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
@@ -65,9 +79,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     localStorage.setItem('selfprint_theme', theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
-      document.documentElement.classList.remove('light');
     } else {
-      document.documentElement.classList.add('light');
       document.documentElement.classList.remove('dark');
     }
     set({ theme });
@@ -79,18 +91,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addNotification: (notif) => {
-    const newEntry: AppNotification = {
+    const newNotif: AppNotification = {
       ...notif,
       id: `n_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       timestamp: new Date().toISOString(),
       read: false
     };
-
     set((state) => ({
-      notifications: [newEntry, ...state.notifications]
+      notifications: [newNotif, ...state.notifications.slice(0, 99)] // Keep latest 100
     }));
 
-    // Trigger toast & Native Windows notification
     get().showToast(notif.title, notif.message, notif.severity);
     if ((window as any).electronAPI?.showNotification) {
       (window as any).electronAPI.showNotification(notif.title, notif.message);
@@ -140,9 +150,39 @@ export const useAppStore = create<AppState>((set, get) => ({
       toasts: state.toasts.filter((t) => t.id !== id)
     })),
 
-  setConnectionStatus: (local, backend) =>
+  setConnectionStatus: (local?: boolean, backend?: boolean) =>
+    set((state) => {
+      const isLocal = local !== undefined ? local : state.isLocalConnected;
+      const isBackend = backend !== undefined ? backend : state.isBackendConnected;
+      let nextState: ConnectionState = 'OFFLINE';
+      if (!isLocal) {
+        nextState = 'OFFLINE';
+      } else {
+        nextState = 'HOST_RUNNING';
+      }
+      return {
+        isLocalConnected: isLocal,
+        isBackendConnected: isBackend,
+        connectionState: nextState
+      };
+    }),
+
+  setLocalConnected: (local: boolean) =>
     set((state) => ({
       isLocalConnected: local,
-      isBackendConnected: backend !== undefined ? backend : state.isBackendConnected
+      connectionState: !local ? 'OFFLINE' : 'HOST_RUNNING'
+    })),
+
+  setBackendConnected: (backend: boolean) =>
+    set((state) => ({
+      isBackendConnected: backend
+    })),
+
+  setConnectionState: (connectionState) => set({ connectionState }),
+
+  setSocketReconnecting: (reconnecting) =>
+    set((state) => ({
+      isSocketReconnecting: reconnecting,
+      connectionState: reconnecting ? 'RECONNECTING' : state.connectionState
     }))
 }));

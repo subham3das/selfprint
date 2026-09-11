@@ -13,6 +13,7 @@ import { notificationsRouter } from '../modules/notifications';
 import { auditRouter } from '../modules/audit';
 import { analyticsRouter } from '../modules/analytics';
 import { publicRouter } from '../modules/public';
+import { connectorRouter } from '../modules/connector/connector.routes';
 
 const apiRouter = Router();
 
@@ -44,7 +45,9 @@ apiRouter.use('/orders', ordersRouter);
 apiRouter.use('/payments', paymentsRouter);
 
 // 9. Physical Hardware & Spooler Telemetry
+apiRouter.use('/connectors', connectorRouter);
 apiRouter.use('/printer', printerModuleRouter);
+apiRouter.use('/connectors/printers', printerModuleRouter);
 
 // 10. Dynamic QR System
 apiRouter.use('/qr', qrRouter);

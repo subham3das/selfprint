@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle2,
@@ -18,6 +18,19 @@ export const PrinterNotifications: React.FC<PrinterNotificationsProps> = ({
   notifications,
   onDismiss
 }) => {
+  // Auto-dismiss each notification after 5 seconds to prevent toast accumulation (Requirement 4)
+  useEffect(() => {
+    if (notifications.length === 0) return;
+    const timers = notifications.map((n) =>
+      setTimeout(() => {
+        onDismiss(n.id);
+      }, 5000)
+    );
+    return () => {
+      timers.forEach(clearTimeout);
+    };
+  }, [notifications, onDismiss]);
+
   if (notifications.length === 0) return null;
 
   return (

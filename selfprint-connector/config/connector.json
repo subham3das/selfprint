@@ -3,12 +3,12 @@
   "machineId": "mach_8189c52071137cb4",
   "deviceToken": null,
   "connectorVersion": "0.2.0",
-  "lastHeartbeat": null,
+  "lastHeartbeat": "2026-09-11T19:11:02.785Z",
   "connectorSettings": {
-    "backendUrl": "http://localhost:3000",
+    "backendUrl": "http://localhost:5000",
     "port": 4500,
     "scanIntervalMs": 30000,
-    "heartbeatIntervalMs": 15000,
+    "heartbeatIntervalMs": 10000,
     "includeVirtualPrinters": true,
     "logLevel": "INFO"
   }

@@ -69,6 +69,17 @@ export class PrinterController extends BaseController {
     const result = await this.service.processHeartbeat(storeId, req.body);
     this.sendSuccess(res, 'Heartbeat acknowledged', result);
   };
+
+  /**
+   * POST /api/v1/printer/sync
+   * Synchronizes detected physical printers from desktop connector into MongoDB
+   */
+  public syncPrinters = async (req: Request, res: Response): Promise<void> => {
+    const storeId = (req as any).user?.storeId || (req as any).user?.id || req.body.storeId;
+    const { connectorId, machineId, printers } = req.body;
+    const result = await this.service.syncPrinters(storeId, connectorId, machineId, printers);
+    this.sendSuccess(res, `Synchronized ${result.syncedCount} physical printers`, result);
+  };
 }
 
 export const printerController = new PrinterController();

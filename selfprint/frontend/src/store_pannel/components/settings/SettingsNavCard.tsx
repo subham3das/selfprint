@@ -8,12 +8,14 @@ import {
   Bell,
   Sliders,
   HardDrive,
-  Info
+  Info,
+  Laptop
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export type SettingsCategoryId =
   | 'store'
+  | 'connector'
   | 'printer'
   | 'pricing'
   | 'payment'
@@ -38,6 +40,12 @@ export const SettingsNavCard: React.FC<SettingsNavCardProps> = ({
       title: 'Store Settings',
       desc: 'Manage your store details',
       icon: Store
+    },
+    {
+      id: 'connector' as SettingsCategoryId,
+      title: 'Printer Connector',
+      desc: 'Pair & monitor Desktop Connector',
+      icon: Laptop
     },
     {
       id: 'printer' as SettingsCategoryId,

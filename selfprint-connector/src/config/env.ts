@@ -17,12 +17,12 @@ export interface Environment {
 
 export const env: Environment = {
   PORT: parseInt(process.env.PORT || '4500', 10),
-  BACKEND_URL: process.env.BACKEND_URL || 'http://localhost:3000',
+  BACKEND_URL: process.env.BACKEND_URL || 'http://localhost:5000',
   DEVICE_ID: process.env.DEVICE_ID || '',
   DEVICE_TOKEN: process.env.DEVICE_TOKEN || '',
   STORE_ID: process.env.STORE_ID || '',
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
-  HEARTBEAT_INTERVAL_MS: parseInt(process.env.HEARTBEAT_INTERVAL_MS || '15000', 10),
+  HEARTBEAT_INTERVAL_MS: parseInt(process.env.HEARTBEAT_INTERVAL_MS || '10000', 10),
   PRINTER_SCAN_INTERVAL_MS: parseInt(process.env.PRINTER_SCAN_INTERVAL_MS || '30000', 10),
   INCLUDE_VIRTUAL_PRINTERS: process.env.INCLUDE_VIRTUAL_PRINTERS === 'true'
 };

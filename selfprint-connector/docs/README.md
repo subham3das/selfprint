@@ -10,16 +10,30 @@ The **SelfPrint Connector** is a lightweight, headless Windows service. Its sole
 
 ```mermaid
 flowchart LR
-    subgraph LocalHost[Windows Host Machine]
-        HW[Printers / USB / Spooler] <--> Connector[SelfPrint Connector Daemon]
-        Tray[System Tray Companion] -.-> Connector
+    subgraph BrowserSessions[SelfPrint Web Platform]
+        WebApp[Customer / Store / Admin Web Apps]
     end
-    Connector <== WebSocket / TLS ==> Cloud[SelfPrint Cloud Platform]
-    Cloud <--> WebApp[SelfPrint Web App / Store Dashboard]
+    
+    subgraph Cloud[SelfPrint Cloud Platform]
+        Backend[Node.js Backend & MongoDB]
+    end
+
+    subgraph LocalHost[Windows Host Machine]
+        Connector[SelfPrint Connector Daemon]
+        DesktopApp[Electron Desktop Companion]
+        HW[Printers / Windows Spooler]
+    end
+
+    WebApp <== HTTPS / WSS ==> Backend
+    Backend <== WebSocket / TLS & REST ==> Connector
+    DesktopApp <-->|Local REST :4500| Connector
+    Connector <--> HW
 ```
 
 ### Key Highlights
 - **Pure Hardware Bridge**: Zero business logic, no customer accounts, no store management, no payments.
+- **Browser-Decoupled**: Completely independent from browser sessions, localhost navigation, or admin/store logins.
+- **Explicit Protocol Routing**: Responds only to `selfprint://connector/*` deep-links; ignores all browser URLs.
 - **Silent Operation**: Runs in the background as a Windows Service or Startup daemon without terminal or browser windows.
 - **Auto Reconnection**: Exponential reconnect ladder (2s -> 5s -> 10s -> 20s -> 30s) ensures self-healing connectivity.
 - **Offline Resilience**: Automatically caches pre-downloaded jobs and never aborts in-flight prints during network drops.

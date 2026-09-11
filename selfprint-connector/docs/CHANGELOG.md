@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.1] - 2026-09-10
+### Fixed (Architecture Isolation & Protocol Hardening)
+- **Scoped Deep Linking Protocol (`selfprint://connector/*`)**: Restricted URL protocol handling exclusively to `selfprint://connector`, `selfprint://connector/dashboard`, `selfprint://connector/printers`, `selfprint://connector/settings`, `selfprint://connector/activity`, and `selfprint://connector/notifications`. Any other URL or arbitrary browser navigation is ignored.
+- **Vite Dev Server Port Isolation**: Configured Desktop Vite dev server to run on port `5174` (overridable via `VITE_DEV_SERVER_URL`), preventing port collisions with the SelfPrint Web Frontend on `5173`.
+- **Decoupled Electron Lifecycle**: Completely removed any browser interception or auto-launch on localhost/web routing. Electron operates strictly as an autonomous Windows companion.
+
+---
+
 ## [0.8.0] - 2026-09-09
 
 ### Added (Phase 8 — Integrate Connector Desktop UI with SelfPrint Web Platform)
-- **Deep Linking Protocol (`selfprint://`)**: Registered custom URL protocol handler in Electron (`selfprint://open`, `selfprint://printers`, `selfprint://settings`, `selfprint://notifications`, `selfprint://activity`) allowing the SelfPrint Web App to launch and focus the Desktop UI directly.
+- **Deep Linking Protocol (`selfprint://connector/*`)**: Custom URL protocol handler in Electron for explicit Windows-level desktop shortcuts.
 - **Store Rooms Realtime Synchronization**: Implemented Socket.IO store rooms (`store:${storeId}`) broadcasting `store_connector_status`, `store_printers_updated`, `store_connector_health`, `store_printer_event`, `store_job_progress`, and `store_notification`.
 - **Remote Notification Bridge**: Dual-channel notification dispatcher routing alerts to both the Store Dashboard and Connector Desktop UI simultaneously.
 - **Store-to-Connector Remote Control API**: `POST /api/v1/stores/:storeId/connectors/:id/command` executing `refresh_printers`, `restart_connector`, `restart_spooler`, `pause_printer`, `resume_printer`, `test_print`, and `refresh_status`.

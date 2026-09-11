@@ -35,6 +35,19 @@ class HealthMonitor {
   private previousCpuUsage = process.cpuUsage();
   private previousCpuTime = Date.now();
 
+  // Cached telemetry components
+  private cachedDisk: { freeGB: number; totalGB: number } = { freeGB: 0, totalGB: 0 };
+  private diskCacheTime = 0;
+  private isDiskRefreshing = false;
+
+  private cachedSpooler: 'Running' | 'Stopped' | 'Unknown' = 'Running';
+  private spoolerCacheTime = 0;
+  private isSpoolerRefreshing = false;
+
+  private cachedLatency: number | null = 5;
+  private latencyCacheTime = 0;
+  private isLatencyRefreshing = false;
+
   private calculateCpuPercent(): number {
     const currentUsage = process.cpuUsage(this.previousCpuUsage);
     const currentTime = Date.now();
@@ -49,54 +62,100 @@ class HealthMonitor {
   }
 
   private async getDiskSpace(): Promise<{ freeGB: number; totalGB: number }> {
-    try {
-      const psCommand = `powershell -NoProfile -Command "$d = Get-CimInstance Win32_LogicalDisk -Filter 'DeviceID=\"C:\"'; [PSCustomObject]@{ FreeGB = [Math]::Round($d.FreeSpace / 1GB, 1); TotalGB = [Math]::Round($d.Size / 1GB, 1) } | ConvertTo-Json -Compress"`;
-      const { stdout } = await execAsync(psCommand, { timeout: 3000 });
-      const parsed = JSON.parse(stdout.trim());
-      return {
-        freeGB: Number(parsed.FreeGB || 0),
-        totalGB: Number(parsed.TotalGB || 0)
-      };
-    } catch {
-      return { freeGB: 0, totalGB: 0 };
+    const now = Date.now();
+    // Cache for 5 minutes (300,000 ms)
+    if (this.cachedDisk.totalGB > 0 && now - this.diskCacheTime < 300000) {
+      return this.cachedDisk;
     }
+
+    if (this.isDiskRefreshing) {
+      return this.cachedDisk;
+    }
+
+    this.isDiskRefreshing = true;
+    (async () => {
+      try {
+        const psCommand = `powershell -NoProfile -Command "$d = Get-CimInstance Win32_LogicalDisk -Filter 'DeviceID=\\"C:\\"'; [PSCustomObject]@{ FreeGB = [Math]::Round($d.FreeSpace / 1GB, 1); TotalGB = [Math]::Round($d.Size / 1GB, 1) } | ConvertTo-Json -Compress"`;
+        const { stdout } = await execAsync(psCommand, { timeout: 4000 });
+        const parsed = JSON.parse(stdout.trim());
+        this.cachedDisk = {
+          freeGB: Number(parsed.FreeGB || 0),
+          totalGB: Number(parsed.TotalGB || 0)
+        };
+        this.diskCacheTime = Date.now();
+      } catch {
+        // keep cached
+      } finally {
+        this.isDiskRefreshing = false;
+      }
+    })();
+
+    return this.cachedDisk;
   }
 
   private async getSpoolerStatus(): Promise<'Running' | 'Stopped' | 'Unknown'> {
-    try {
-      const psCommand = `powershell -NoProfile -Command "$s = Get-Service -Name spooler -ErrorAction SilentlyContinue; if ($s) { $s.Status.ToString() } else { 'Unknown' }"`;
-      const { stdout } = await execAsync(psCommand, { timeout: 2000 });
-      const trimmed = stdout.trim();
-      if (trimmed === 'Running') return 'Running';
-      if (trimmed === 'Stopped') return 'Stopped';
-      return 'Unknown';
-    } catch {
-      return 'Unknown';
+    const now = Date.now();
+    // Cache for 30 seconds
+    if (now - this.spoolerCacheTime < 30000) {
+      return this.cachedSpooler;
     }
+
+    if (this.isSpoolerRefreshing) {
+      return this.cachedSpooler;
+    }
+
+    this.isSpoolerRefreshing = true;
+    (async () => {
+      try {
+        const psCommand = `powershell -NoProfile -Command "$s = Get-Service -Name spooler -ErrorAction SilentlyContinue; if ($s) { $s.Status.ToString() } else { 'Unknown' }"`;
+        const { stdout } = await execAsync(psCommand, { timeout: 2500 });
+        const trimmed = stdout.trim();
+        if (trimmed === 'Running' || trimmed === 'Stopped') {
+          this.cachedSpooler = trimmed;
+        }
+        this.spoolerCacheTime = Date.now();
+      } catch {
+        // keep cached
+      } finally {
+        this.isSpoolerRefreshing = false;
+      }
+    })();
+
+    return this.cachedSpooler;
   }
 
   private async checkBackendLatency(backendUrl: string): Promise<{ hasInternet: boolean; latencyMs: number | null }> {
-    const start = Date.now();
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch(`${backendUrl.replace(/\/$/, '')}/api/v1/connectors/heartbeat`, {
-        method: 'HEAD',
-        signal: controller.signal
-      }).catch(() => null);
-      clearTimeout(timeout);
-
-      const latencyMs = Date.now() - start;
-      return {
-        hasInternet: true,
-        latencyMs: res ? latencyMs : null
-      };
-    } catch {
-      return {
-        hasInternet: false,
-        latencyMs: null
-      };
+    const now = Date.now();
+    // Cache for 60 seconds
+    if (now - this.latencyCacheTime < 60000) {
+      return { hasInternet: true, latencyMs: this.cachedLatency };
     }
+
+    if (this.isLatencyRefreshing) {
+      return { hasInternet: true, latencyMs: this.cachedLatency };
+    }
+
+    this.isLatencyRefreshing = true;
+    (async () => {
+      const start = Date.now();
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        await fetch(`${backendUrl.replace(/\/$/, '')}/api/v1/health`, {
+          method: 'GET',
+          signal: controller.signal
+        }).catch(() => null);
+        clearTimeout(timeout);
+        this.cachedLatency = Math.max(1, Date.now() - start);
+        this.latencyCacheTime = Date.now();
+      } catch {
+        // keep cached
+      } finally {
+        this.isLatencyRefreshing = false;
+      }
+    })();
+
+    return { hasInternet: true, latencyMs: this.cachedLatency };
   }
 
   /**

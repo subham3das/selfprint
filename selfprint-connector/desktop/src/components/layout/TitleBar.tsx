@@ -45,9 +45,9 @@ export const TitleBar: React.FC = () => {
           <span className="text-slate-300 font-medium">
             {isLocalConnected
               ? isBackendConnected
-                ? 'Online'
-                : 'Local Only'
-              : 'Daemon Offline'}
+                ? 'Backend Connected'
+                : 'Host Service Running'
+              : 'Host Service Offline'}
           </span>
         </div>
       </div>

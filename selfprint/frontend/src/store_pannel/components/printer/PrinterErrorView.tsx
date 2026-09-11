@@ -61,23 +61,23 @@ export const PrinterErrorView: React.FC<PrinterErrorViewProps> = ({
       case 'HostServiceRequired':
         return {
           icon: Download,
-          badgeColor: 'bg-purple-50 text-purple-800 border-purple-200',
-          badgeText: 'Host Service Required',
-          title: 'Self Print Host Service Not Running',
+          badgeColor: 'bg-rose-50 text-rose-800 border-rose-200',
+          badgeText: 'Connector Offline',
+          title: 'Connector Not Installed or Offline',
           description:
-            'Browsers cannot communicate directly with physical USB ports due to security sandboxing. The Self Print Host Bridge is required to detect local physical printers.',
+            'Browsers cannot communicate directly with physical USB ports due to security sandboxing. The SelfPrint Desktop Connector is required to detect local physical printers on localhost:4500.',
           reasons: [
-            'Self Print Desktop Host service is not running on localhost:45120',
-            'Service was stopped or closed in the background',
-            'Computer firewall is preventing local loopback communication'
+            'SelfPrint Desktop Connector is not running on localhost:4500',
+            'Connector application was closed or stopped in Windows',
+            'Firewall or security software is blocking loopback port 4500'
           ],
           steps: [
-            'Start the Self Print Host Service application on your computer',
-            'Verify your physical printer is turned ON and connected via USB or Wi-Fi',
-            'Click Scan Again below to scan for installed physical printers'
+            'Download and install the SelfPrint Desktop Connector',
+            'Run the SelfPrint Desktop application from Start Menu or desktop shortcut',
+            'Ensure localhost:4500 is reachable, then click Refresh Status'
           ],
           primaryAction: {
-            label: 'Scan Again',
+            label: 'Refresh Status',
             onClick: onRetry
           }
         };
