@@ -65,16 +65,16 @@ export const PrinterErrorView: React.FC<PrinterErrorViewProps> = ({
           badgeText: 'Connector Offline',
           title: 'Connector Not Installed or Offline',
           description:
-            'Browsers cannot communicate directly with physical USB ports due to security sandboxing. The SelfPrint Desktop Connector is required to detect local physical printers on localhost:4500.',
+            'Browsers cannot communicate directly with physical USB ports due to security sandboxing. The SelfPrint Desktop Connector is required to detect local physical printers via port 4500.',
           reasons: [
-            'SelfPrint Desktop Connector is not running on localhost:4500',
+            'SelfPrint Desktop Connector host service is not running on port 4500',
             'Connector application was closed or stopped in Windows',
-            'Firewall or security software is blocking loopback port 4500'
+            'Firewall or security software is blocking connector port 4500'
           ],
           steps: [
             'Download and install the SelfPrint Desktop Connector',
             'Run the SelfPrint Desktop application from Start Menu or desktop shortcut',
-            'Ensure localhost:4500 is reachable, then click Refresh Status'
+            'Ensure Desktop Connector is running, then click Refresh Status'
           ],
           primaryAction: {
             label: 'Refresh Status',

@@ -68,7 +68,6 @@ export const usePrinterMonitoring = () => {
 
   /**
    * Queries connector status exclusively from the Backend (Single Source of Truth).
-   * Localhost:4500 is NEVER polled for runtime connector status.
    */
   const checkConnectorStatus = useCallback(async () => {
     try {

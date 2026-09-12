@@ -49,7 +49,7 @@ export const PrinterConnectorSettingsCard: React.FC = () => {
 
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ─── Fetch live status strictly from backend (never localhost) ───────────
+  // ─── Fetch live status strictly from backend ────────────────────────────
   const fetchStatus = useCallback(async () => {
     try {
       const res = await printerService.getConnectorStatus(storeId);

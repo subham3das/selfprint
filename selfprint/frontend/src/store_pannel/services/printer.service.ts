@@ -4,9 +4,9 @@ import {
   PrinterErrorType
 } from '../types/printerSetup.types';
 import { apiClient } from '@/lib/axios';
+import { API_BASE } from '@/config/api';
 import { storeAuthService } from './storeAuth.service';
 
-const HOST_BRIDGE_PORTS = [4500];
 const STORAGE_KEY_CONFIGURED_PRINTER = 'selfprint_configured_printer';
 const STORAGE_KEY_PRINTER_CONFIG = 'selfprint_printer_config';
 const STORAGE_KEY_SUPPRESS_WIZARD = 'selfprint_suppress_printer_wizard';
@@ -21,24 +21,26 @@ export const DEFAULT_PRINTER_CONFIG: PrinterSetupConfig = {
 };
 
 async function fetchFromBridge(endpoint: string, options?: RequestInit, timeoutMs = 3000): Promise<Response> {
-  let lastError: any = null;
-  for (const port of HOST_BRIDGE_PORTS) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      const res = await fetch(`http://127.0.0.1:${port}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`, {
-        ...options,
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        return res;
-      }
-    } catch (err) {
-      lastError = err;
-    }
+  const bridgeUrl = import.meta.env.VITE_HOST_BRIDGE_URL;
+  if (!bridgeUrl) {
+    throw new Error('HostServiceRequired');
   }
-  throw lastError || new Error('HostServiceRequired');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${bridgeUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      return res;
+    }
+    throw new Error('HostServiceResponseNotOk');
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
 }
 
 export const printerService = {
@@ -631,7 +633,7 @@ export const printerService = {
    * Returns direct download URL for the Windows installer executable
    */
   getInstallerDownloadUrl(): string {
-    const baseURL = apiClient.defaults.baseURL || 'http://localhost:5000/api/v1';
+    const baseURL = apiClient.defaults.baseURL || API_BASE;
     return `${baseURL}/connectors/download`;
   }
 };

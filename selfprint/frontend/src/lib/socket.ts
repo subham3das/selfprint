@@ -1,10 +1,11 @@
 import { io, Socket } from 'socket.io-client';
+import { SOCKET_URL } from '@/config/api';
 
 let socket: Socket | null = null;
 
 export const getSocket = (): Socket => {
   if (!socket) {
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+    const socketUrl = SOCKET_URL;
     const token =
       localStorage.getItem('selfprint_admin_token') ||
       localStorage.getItem('selfprint_store_token') ||

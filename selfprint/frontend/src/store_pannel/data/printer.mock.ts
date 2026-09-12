@@ -5,7 +5,7 @@ import {
 export const MOCK_DETECTED_PRINTERS: DetectedPrinter[] = [];
 
 export const SCANNING_MESSAGES = [
-  'Connecting to SelfPrint Host Service (localhost:4500)...',
+  'Connecting to SelfPrint Host Service...',
   'Querying Windows & CUPS print spoolers...',
   'Checking USB ports (USB001, USB002, DOT4)...',
   'Scanning local Wi-Fi & LAN network printers...',
