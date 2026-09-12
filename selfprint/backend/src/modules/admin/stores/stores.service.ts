@@ -14,6 +14,8 @@ import {
   CreateAdminStoreInput,
   UpdateAdminStoreInput
 } from './stores.types';
+import { emailService } from '../../../services/email.service';
+import { logger } from '../../../utils/logger';
 
 export class AdminStoresService {
   /**
@@ -362,6 +364,25 @@ export class AdminStoresService {
       failedToday: 0,
       pendingToday: 0
     });
+
+    // Dispatch Store Welcome Email asynchronously (non-blocking, never fails registration)
+    const frontendBase =
+      process.env.STORE_FRONTEND_URL ||
+      process.env.FRONTEND_URL ||
+      'https://selfprint.vercel.app';
+    const dashboardUrl = `${frontendBase.replace(/\/+$/, '')}/store/login`;
+
+    emailService
+      .sendStoreWelcomeEmail({
+        ownerName: newStore.ownerName,
+        storeName: newStore.name,
+        email: newStore.email,
+        dashboardUrl,
+        temporaryPassword: rawPassword
+      })
+      .catch((err) => {
+        logger.error(`[AdminStoresService] Error dispatching store welcome email to ${newStore.email}:`, err);
+      });
 
     return newStore;
   }

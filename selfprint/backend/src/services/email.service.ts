@@ -6,10 +6,12 @@ import {
   WelcomeEmailData,
   AccountSuspendedEmailData,
   PermissionsUpdatedEmailData,
+  StoreWelcomeEmailData,
   getInvitationEmailHtml,
   getWelcomeEmailHtml,
   getAccountSuspendedEmailHtml,
-  getPermissionsUpdatedEmailHtml
+  getPermissionsUpdatedEmailHtml,
+  getStoreWelcomeEmailHtml
 } from './templates/emailTemplates';
 
 export class EmailService {
@@ -160,6 +162,107 @@ export class EmailService {
       });
     } catch (err: any) {
       logger.warn(`Failed to send permissions updated email to ${email}: ${err?.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Send Store Partner Welcome Email after successful registration
+   * Accepts either an object: { ownerName, storeName, email, dashboardUrl?, temporaryPassword? }
+   * or positional parameters: (ownerName, storeName, email, dashboardUrl?, temporaryPassword?)
+   */
+  public async sendStoreWelcomeEmail(
+    ownerNameOrData: StoreWelcomeEmailData | string,
+    storeName?: string,
+    email?: string,
+    dashboardUrl?: string,
+    temporaryPassword?: string
+  ): Promise<any> {
+    const data: StoreWelcomeEmailData =
+      typeof ownerNameOrData === 'object'
+        ? ownerNameOrData
+        : {
+            ownerName: ownerNameOrData,
+            storeName: storeName || '',
+            email: email || '',
+            dashboardUrl,
+            temporaryPassword
+          };
+
+    const recipientEmail = data.email?.trim();
+    if (!recipientEmail) {
+      logger.warn('[EmailService] Cannot send store welcome email: Recipient email is empty.');
+      return null;
+    }
+
+    if (!this.transporter) {
+      this.initTransporter();
+    }
+    if (!this.transporter) {
+      logger.warn(`[EmailService] SMTP transporter unavailable. Welcome email to ${recipientEmail} skipped.`);
+      return null;
+    }
+
+    try {
+      const frontendBase =
+        process.env.STORE_FRONTEND_URL ||
+        process.env.FRONTEND_URL ||
+        'https://selfprint.vercel.app';
+      const effectiveDashboardUrl =
+        data.dashboardUrl || `${frontendBase.replace(/\/+$/, '')}/store/login`;
+
+      const emailData: StoreWelcomeEmailData = {
+        ...data,
+        email: recipientEmail,
+        dashboardUrl: effectiveDashboardUrl,
+        supportEmail: env.EMAIL.FROM_ADDRESS || 'das01subhamj@gmail.com'
+      };
+
+      const html = getStoreWelcomeEmailHtml(emailData);
+      const fromAddress = `"${env.EMAIL.FROM_NAME}" <${env.EMAIL.FROM_ADDRESS}>`;
+
+      const textLines = [
+        `Welcome to SelfPrint!`,
+        ``,
+        `Your store account has been created successfully.`,
+        ``,
+        `Store:`,
+        `${emailData.storeName}`,
+        ``,
+        `Owner:`,
+        `${emailData.ownerName}`,
+        ``,
+        `Login Email:`,
+        `${emailData.email}`,
+        ``,
+        `Dashboard:`,
+        `${effectiveDashboardUrl}`,
+        ``,
+        emailData.temporaryPassword
+          ? `Temporary Password:\n${emailData.temporaryPassword}\n(Please change your password after logging in)\n`
+          : `Use the password you created during registration.\n\nIf you forget it, use the Forgot Password option.\n`,
+        `You can now log in and pair your Desktop Connector.`,
+        ``,
+        `Thank you for choosing SelfPrint.`,
+        ``,
+        `Support: ${emailData.supportEmail}`
+      ];
+
+      logger.info(`📧 Attempting to send store welcome email to: ${recipientEmail}`);
+
+      const info = await this.transporter.sendMail({
+        from: fromAddress,
+        to: recipientEmail,
+        subject: 'Welcome to SelfPrint – Your Store Account is Ready',
+        html,
+        text: textLines.join('\n')
+      });
+
+      logger.info(`✓ Store welcome email delivered successfully to ${recipientEmail} (MessageID: ${info?.messageId})`);
+      return info;
+    } catch (err: any) {
+      logger.error(`✗ Failed to send store welcome email to ${recipientEmail}: ${err?.message || err}`);
+      // Never throw error - registration must succeed even if SMTP fails
       return null;
     }
   }

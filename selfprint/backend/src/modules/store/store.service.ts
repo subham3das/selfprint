@@ -15,6 +15,8 @@ import {
   ForbiddenError,
   ValidationError
 } from '../../errors';
+import { emailService } from '../../services/email.service';
+import { logger } from '../../utils/logger';
 
 export class StoreService {
   private repository: StoreRepository;
@@ -85,6 +87,24 @@ export class StoreService {
       storeId: String(store._id),
       storeCode: store.storeCode
     });
+
+    // 5. Dispatch Store Welcome Email asynchronously (non-blocking, never fails registration)
+    const frontendBase =
+      process.env.STORE_FRONTEND_URL ||
+      process.env.FRONTEND_URL ||
+      'https://selfprint.vercel.app';
+    const dashboardUrl = `${frontendBase.replace(/\/+$/, '')}/store/login`;
+
+    emailService
+      .sendStoreWelcomeEmail({
+        ownerName: store.ownerName,
+        storeName: store.name,
+        email: store.email,
+        dashboardUrl
+      })
+      .catch((err) => {
+        logger.error(`[StoreService] Error dispatching store welcome email to ${store.email}:`, err);
+      });
 
     return {
       storeId: String(store._id),
