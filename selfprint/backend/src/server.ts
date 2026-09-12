@@ -1,36 +1,61 @@
 import { app } from './app';
 import { env } from './config';
-import { connectDatabase, disconnectDatabase } from './database';
+import { connectDatabase, disconnectDatabase, isDatabaseHealthy } from './database';
 import { logger } from './utils';
 import { socketManager } from './socket';
 import { emailService } from './services/email.service';
 
-const PORT = env.PORT || 5000;
+// 1. Uncaught Exception Handler
+process.on('uncaughtException', (err: Error) => {
+  logger.error('💥 UNCAUGHT EXCEPTION! Shutting down immediately...', {
+    error: err.message,
+    stack: err.stack
+  });
+  process.exit(1);
+});
+
+// 2. Unhandled Promise Rejection Handler
+process.on('unhandledRejection', (reason: any) => {
+  logger.error('💥 UNHANDLED REJECTION! Shutting down immediately...', {
+    reason: reason?.message || reason,
+    stack: reason?.stack
+  });
+  process.exit(1);
+});
+
+// Render dynamically assigns process.env.PORT; fallback to 5000 for local dev
+const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 
 const startServer = async () => {
   try {
-    // 1. Establish MongoDB connection
+    // 1. Establish MongoDB connection with retries
     await connectDatabase();
+    logger.info('✅ Database connected successfully');
 
-    // 2. Verify Transactional SMTP Email Connection
-    await emailService.verifyConnection();
+    // 2. Safely check SMTP connection without halting boot if credentials are empty/invalid
+    try {
+      await emailService.verifyConnection();
+    } catch (emailErr) {
+      logger.warn('⚠️ SMTP verification skipped or failed. Continuing boot without blocking.');
+    }
 
-    // 3. Start HTTP server listener on 0.0.0.0 (IPv4 + IPv6 all interfaces)
-    const server = app.listen(PORT, HOST, () => {
-      logger.info(
-        `🚀 Self Print Server listening on http://${HOST}:${PORT} [${env.NODE_ENV}]`
-      );
-      logger.info(
-        `📋 Health check active at http://localhost:${PORT}/api/v1/health`
-      );
+    // 3. Start HTTP server listener on 0.0.0.0
+    const server = app.listen(Number(PORT), HOST, () => {
+      logger.info('====================================================');
+      logger.info('🚀 Self Print Enterprise Backend API Initialized');
+      logger.info(`🌐 Environment : ${env.NODE_ENV || 'development'}`);
+      logger.info(`🔌 Port        : ${PORT}`);
+      logger.info(`💾 Database    : ${isDatabaseHealthy() ? 'Connected' : 'Disconnected'}`);
+      logger.info(`🔗 Server URL  : http://${HOST}:${PORT}`);
+      logger.info(`📋 Healthcheck : http://${HOST}:${PORT}/healthz`);
+      logger.info('====================================================');
     });
 
-
-    // 3. Initialize Socket.io Real-time Event Broadcaster
+    // 4. Initialize Socket.io Real-time Event Broadcaster
     socketManager.init(server);
 
-    // 3. Graceful Shutdown handler
+    // 5. Graceful Shutdown handler
     const handleShutdown = async (signal: string) => {
       logger.info(`Received ${signal}. Gracefully closing HTTP server and database connections...`);
       server.close(async () => {
@@ -54,9 +79,10 @@ const startServer = async () => {
     process.on('SIGTERM', () => handleShutdown('SIGTERM'));
     process.on('SIGINT', () => handleShutdown('SIGINT'));
   } catch (error) {
-    logger.error('Failed to initialize server:', error);
+    logger.error('❌ Failed to initialize server on startup:', error);
     process.exit(1);
   }
 };
 
 startServer();
+

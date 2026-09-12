@@ -76,12 +76,12 @@ export const env: EnvironmentConfig = {
   SMTP: {
     HOST: process.env.SMTP_HOST || 'smtp.gmail.com',
     PORT: parseInt(process.env.SMTP_PORT || '587', 10),
-    USER: process.env.SMTP_USER || 'das01subhamj@gmail.com',
-    PASS: process.env.SMTP_PASS || 'xcnw bxzf htpe kfvd'
+    USER: process.env.SMTP_USER || '',
+    PASS: process.env.SMTP_PASS || ''
   },
   EMAIL: {
     FROM_NAME: process.env.EMAIL_FROM_NAME || 'Self Print',
-    FROM_ADDRESS: process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER || 'das01subhamj@gmail.com'
+    FROM_ADDRESS: process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER || 'noreply@selfprint.com'
   },
   isProduction: process.env.NODE_ENV === 'production',
   isDevelopment: process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test',

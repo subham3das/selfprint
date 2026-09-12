@@ -3,18 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "main": "dist/server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "rimraf dist && tsc",
     "start": "node dist/server.js",
-    "seed:superadmin": "tsx scripts/seedSuperAdmin.ts",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "seed:superadmin": "tsx scripts/seedSuperAdmin.ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.3.1",
-    "@types/nodemailer": "^8.0.1",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^1.41.3",
     "compression": "^1.8.1",
@@ -45,7 +43,7 @@
     "@types/morgan": "^1.9.9",
     "@types/multer": "^2.2.0",
     "@types/node": "^22.13.1",
-    "prisma": "^6.3.1",
+    "@types/nodemailer": "^8.0.1",
     "rimraf": "^6.0.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"

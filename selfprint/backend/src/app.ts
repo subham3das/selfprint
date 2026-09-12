@@ -34,12 +34,20 @@ export const createApp = (): Application => {
           return callback(null, true);
         }
 
+        // Allow Vercel preview & production deployments and Render URLs
+        if (
+          /^https:\/\/[a-zA-Z0-9_-]+\.vercel\.app$/.test(origin) ||
+          /^https:\/\/[a-zA-Z0-9_-]+\.onrender\.com$/.test(origin)
+        ) {
+          return callback(null, true);
+        }
+
         const allowed = Array.isArray(env.CORS_ORIGIN) ? env.CORS_ORIGIN : [env.CORS_ORIGIN];
         if (allowed.includes('*') || allowed.includes(origin)) {
           return callback(null, true);
         }
 
-        callback(new Error(`Origin ${origin} not allowed by CORS`));
+        callback(null, false);
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -62,6 +70,11 @@ export const createApp = (): Application => {
   // Body Parsing Middleware
   app.use(express.json({ limit: '15mb' }));
   app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+
+  // Render & Cloud Health Check Endpoints
+  app.get(['/healthz', '/health'], (_req: Request, res: Response) => {
+    res.status(200).json({ status: 'ok' });
+  });
 
   // Root status endpoint
   app.get('/', (_req: Request, res: Response) => {

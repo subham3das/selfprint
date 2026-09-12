@@ -44,14 +44,18 @@ export class EmailService {
   }
 
   /**
-   * Verify SMTP Transporter Connection on Server Startup
    */
   public async verifyConnection(): Promise<boolean> {
+    if (!env.SMTP.USER || !env.SMTP.PASS) {
+      logger.info('ℹ️ SMTP credentials not configured; email dispatch will be unavailable until set.');
+      return false;
+    }
+
     if (!this.transporter) {
       this.initTransporter();
     }
     if (!this.transporter) {
-      logger.error('✗ SMTP Transporter is not initialized');
+      logger.warn('⚠️ SMTP Transporter is not initialized');
       return false;
     }
 

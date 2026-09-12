@@ -41,17 +41,27 @@ class DatabaseConnection {
     });
   }
 
-  public async connect(): Promise<void> {
+  public async connect(retries = 5, delayMs = 3000): Promise<void> {
     if (this.isConnected || mongoose.connection.readyState === 1) {
       return;
     }
 
-    try {
-      console.log('⏳ Connecting to MongoDB (database: selfprint)...');
-      await mongoose.connect(databaseConfig.uri, databaseConfig.options);
-    } catch (error) {
-      console.error('❌ Failed to connect to MongoDB on startup:', error);
-      throw error;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        console.log(`⏳ Connecting to MongoDB (attempt ${attempt}/${retries})...`);
+        await mongoose.connect(databaseConfig.uri, databaseConfig.options);
+        this.isConnected = true;
+        return;
+      } catch (error) {
+        console.error(`❌ MongoDB connection attempt ${attempt}/${retries} failed:`, error);
+        if (attempt === retries) {
+          console.error('❌ Max connection retries reached for MongoDB. Halting startup.');
+          throw error;
+        }
+        const backoff = delayMs * attempt;
+        console.log(`⏳ Retrying MongoDB connection in ${backoff / 1000}s...`);
+        await new Promise((resolve) => setTimeout(resolve, backoff));
+      }
     }
   }
 
