@@ -13,7 +13,7 @@ import {
   ChevronRight,
   AlertCircle
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   QueueJobItem,
   QueueJobStatus,
@@ -224,7 +224,6 @@ export const QueueTableCard: React.FC<QueueTableCardProps> = ({
   onStatusChange,
   onDeleteJob
 }) => {
-  const [activeMenuJobId, setActiveMenuJobId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 6;
 

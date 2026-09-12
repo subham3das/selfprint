@@ -156,8 +156,6 @@ export const QueueCard: React.FC<QueueCardProps> = ({
   onViewJob,
   onViewFullQueue
 }) => {
-  const [activeMenuJobId, setActiveMenuJobId] = useState<string | null>(null);
-
   // Tab counts
   const printingCount = jobs.filter((j) => j.status === 'Printing').length;
   const waitingCount = jobs.filter((j) => j.status === 'Waiting').length;
