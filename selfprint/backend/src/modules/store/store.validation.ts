@@ -1,5 +1,32 @@
 import { z } from 'zod';
 
+export const bankDetailsSchema = z.object({
+  accountHolderName: z
+    .string()
+    .min(2, 'Account holder name is required')
+    .trim(),
+  bankName: z.string().min(2, 'Bank name is required').trim(),
+  accountNumber: z
+    .string()
+    .min(9, 'Account number must be 9-18 digits')
+    .max(18, 'Account number must be 9-18 digits')
+    .regex(/^\d+$/, 'Account number must only contain digits'),
+  confirmAccountNumber: z.string().optional(),
+  ifscCode: z
+    .string()
+    .regex(/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/, 'Invalid IFSC format (e.g. SBIN0000088)')
+    .toUpperCase()
+    .trim(),
+  branchName: z.string().optional(),
+  upiId: z
+    .string()
+    .optional()
+    .refine(
+      (val) => !val || /^[\w.-]+@[\w.-]+$/.test(val),
+      'Invalid UPI ID format (e.g. name@bank)'
+    )
+});
+
 export const storeOnboardingSchema = z.object({
   storeDetails: z.object({
     storeName: z
@@ -49,32 +76,7 @@ export const storeOnboardingSchema = z.object({
     storeImage: z.string().optional(),
     logo: z.string().optional()
   }),
-  bankDetails: z.object({
-    accountHolderName: z
-      .string()
-      .min(2, 'Account holder name is required')
-      .trim(),
-    bankName: z.string().min(2, 'Bank name is required').trim(),
-    accountNumber: z
-      .string()
-      .min(9, 'Account number must be 9-18 digits')
-      .max(18, 'Account number must be 9-18 digits')
-      .regex(/^\d+$/, 'Account number must only contain digits'),
-    confirmAccountNumber: z.string().optional(),
-    ifscCode: z
-      .string()
-      .regex(/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/, 'Invalid IFSC format (e.g. SBIN0000088)')
-      .toUpperCase()
-      .trim(),
-    branchName: z.string().optional(),
-    upiId: z
-      .string()
-      .optional()
-      .refine(
-        (val) => !val || /^[\w.-]+@[\w.-]+$/.test(val),
-        'Invalid UPI ID format (e.g. name@bank)'
-      )
-  }),
+  bankDetails: bankDetailsSchema,
   confirmed: z.boolean().optional()
 });
 
@@ -89,6 +91,7 @@ export const storeLoginSchema = z.object({
 });
 
 export default {
+  bankDetailsSchema,
   storeOnboardingSchema,
   storeLoginSchema
 };

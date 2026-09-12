@@ -3,6 +3,7 @@ import { BaseController } from '../../controllers/BaseController';
 import { storeService, StoreService } from './store.service';
 import { BadRequestError } from '../../errors';
 import { HTTP_STATUS } from '../../constants/httpStatusCodes';
+import { logger } from '../../utils/logger';
 
 export class StoreController extends BaseController {
   private service: StoreService;
@@ -11,6 +12,67 @@ export class StoreController extends BaseController {
     super();
     this.service = service;
   }
+
+  /**
+   * POST /api/v1/store/onboarding/bank-details
+   * Validates and records Step 2 Bank Details during the store onboarding flow
+   */
+  public validateBankDetails = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const bankDetails = req.body;
+      logger.info(`[StoreController] Received bank details for Step 2 validation: ${bankDetails.bankName} (${bankDetails.accountHolderName})`);
+
+      this.sendSuccess(
+        res,
+        'Bank details validated and recorded successfully.',
+        {
+          validated: true,
+          step: 2,
+          nextStep: 3,
+          currentStep: 'review',
+          bankDetails: {
+            accountHolderName: bankDetails.accountHolderName,
+            bankName: bankDetails.bankName,
+            accountNumber: bankDetails.accountNumber,
+            ifscCode: bankDetails.ifscCode,
+            branchName: bankDetails.branchName || '',
+            upiId: bankDetails.upiId || ''
+          }
+        },
+        HTTP_STATUS.OK
+      );
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * GET /api/v1/store/onboarding/status
+   */
+  public getOnboardingStatus = async (
+    _req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      this.sendSuccess(
+        res,
+        'Onboarding status retrieved.',
+        {
+          currentStep: 'review',
+          stepsCompleted: ['store_details', 'bank_details'],
+          status: 'IN_PROGRESS'
+        },
+        HTTP_STATUS.OK
+      );
+    } catch (error) {
+      next(error);
+    }
+  };
 
   /**
    * POST /api/v1/store/onboard

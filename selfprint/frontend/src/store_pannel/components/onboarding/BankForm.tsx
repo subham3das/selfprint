@@ -5,7 +5,8 @@ import {
   Landmark,
   QrCode,
   ArrowRight,
-  ArrowLeft
+  ArrowLeft,
+  Loader2
 } from 'lucide-react';
 import {
   bankDetailsSchema,
@@ -17,6 +18,7 @@ interface BankFormProps {
   initialValues: BankDetailsFormValues;
   serverFieldErrors?: Record<string, string>;
   ownerName?: string;
+  isSubmitting?: boolean;
   onSave: (values: BankDetailsFormValues) => void;
   onBack: () => void;
 }
@@ -25,6 +27,7 @@ export const BankForm: React.FC<BankFormProps> = ({
   initialValues,
   serverFieldErrors,
   ownerName,
+  isSubmitting = false,
   onSave,
   onBack
 }) => {
@@ -305,8 +308,9 @@ export const BankForm: React.FC<BankFormProps> = ({
       <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
         <button
           type="button"
+          disabled={isSubmitting}
           onClick={onBack}
-          className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+          className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Store Details</span>
@@ -314,10 +318,20 @@ export const BankForm: React.FC<BankFormProps> = ({
 
         <button
           type="submit"
-          className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs shadow-md shadow-purple-600/25 flex items-center gap-2 transition-all cursor-pointer hover:-translate-y-0.5 active:translate-y-0"
+          disabled={isSubmitting}
+          className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs shadow-md shadow-purple-600/25 flex items-center gap-2 transition-all cursor-pointer hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <span>Continue to Review</span>
-          <ArrowRight className="w-4 h-4" />
+          {isSubmitting ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Validating Bank Details...</span>
+            </>
+          ) : (
+            <>
+              <span>Continue to Review</span>
+              <ArrowRight className="w-4 h-4" />
+            </>
+          )}
         </button>
       </div>
     </form>

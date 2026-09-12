@@ -125,6 +125,8 @@ export const StoreOnboardingPage: React.FC = () => {
                 initialValues={bankDetails}
                 serverFieldErrors={serverFieldErrors}
                 ownerName={storeDetails.ownerName}
+                isSubmitting={isSubmitting}
+                errorMessage={errorMessage}
                 onSave={handleSaveBankDetails}
                 onBack={() => goToStep('store_details')}
               />

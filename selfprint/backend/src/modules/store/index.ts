@@ -4,14 +4,29 @@ import { historyRouter } from './history';
 import { settingsRouter } from './settings';
 import { qrRouter } from '../qr';
 import { storeController } from './store.controller';
-import { storeOnboardingSchema, storeLoginSchema } from './store.validation';
+import { storeOnboardingSchema, storeLoginSchema, bankDetailsSchema } from './store.validation';
 import { validateRequest } from '../../validators';
 import { authenticate } from '../../middlewares/auth.middleware';
 import { uploadSingleImage } from '../../uploads/multer.config';
 
 const storeRouter = Router();
 
-// Store Partner Onboarding (MongoDB + Default Settings + Bank Details + QR Link)
+// Store Partner Onboarding Step 2: Validate & Record Bank Details
+storeRouter.post(
+  '/onboarding/bank-details',
+  validateRequest(bankDetailsSchema),
+  storeController.validateBankDetails
+);
+storeRouter.post(
+  '/bank-details',
+  validateRequest(bankDetailsSchema),
+  storeController.validateBankDetails
+);
+
+// Store Partner Onboarding Status
+storeRouter.get('/onboarding/status', storeController.getOnboardingStatus);
+
+// Store Partner Onboarding Complete (MongoDB + Default Settings + Bank Details + QR Link)
 storeRouter.post(
   '/onboard',
   validateRequest(storeOnboardingSchema),

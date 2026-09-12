@@ -1,10 +1,40 @@
 import { apiClient } from '@/lib/axios';
 import {
   CompleteStoreOnboardingData,
-  StoreRegistrationResponse
+  StoreRegistrationResponse,
+  BankDetailsFormValues
 } from '../types/storeOnboarding.types';
 
 export const storeOnboardingService = {
+  /**
+   * Submit and validate Step 2 Bank Details with backend API
+   */
+  async submitBankDetails(
+    bankDetails: BankDetailsFormValues
+  ): Promise<{
+    success: boolean;
+    message: string;
+    data?: any;
+  }> {
+    const response = await apiClient.post<{
+      success: boolean;
+      message: string;
+      data: any;
+    }>('/store/onboarding/bank-details', bankDetails);
+    return response.data;
+  },
+
+  /**
+   * Retrieve current onboarding status
+   */
+  async getOnboardingStatus(): Promise<{
+    success: boolean;
+    message?: string;
+    data?: any;
+  }> {
+    const response = await apiClient.get('/store/onboarding/status');
+    return response.data;
+  },
   /**
    * Register store via backend API in MongoDB
    */

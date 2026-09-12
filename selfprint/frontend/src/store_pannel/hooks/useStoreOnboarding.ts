@@ -59,8 +59,28 @@ const STORE_FIELD_KEYS = [
 export const useStoreOnboarding = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('welcome');
-  const [storeDetails, setStoreDetails] = useState<StoreDetailsFormValues>(DEFAULT_STORE_DETAILS);
-  const [bankDetails, setBankDetails] = useState<BankDetailsFormValues>(DEFAULT_BANK_DETAILS);
+  
+  // Preserve form state from localStorage if available
+  const [storeDetails, setStoreDetails] = useState<StoreDetailsFormValues>(() => {
+    try {
+      const saved = localStorage.getItem('selfprint_onboarding_store_details');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Could not restore store details from localStorage:', e);
+    }
+    return DEFAULT_STORE_DETAILS;
+  });
+
+  const [bankDetails, setBankDetails] = useState<BankDetailsFormValues>(() => {
+    try {
+      const saved = localStorage.getItem('selfprint_onboarding_bank_details');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Could not restore bank details from localStorage:', e);
+    }
+    return DEFAULT_BANK_DETAILS;
+  });
+
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -85,21 +105,92 @@ export const useStoreOnboarding = () => {
   }, [currentStep, countdown, navigate]);
 
   const goToStep = (step: OnboardingStep) => {
+    console.log(`[Onboarding] currentStep change -> ${step}`);
+    console.log(`[Onboarding] onboarding status: Active Step is now '${step}'`);
     setErrorMessage(null);
     setCurrentStep(step);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSaveStoreDetails = (values: StoreDetailsFormValues) => {
-    setStoreDetails((prev) => ({ ...prev, ...values }));
+    console.log('[Onboarding] Submitting Store Details (Step 1)...', {
+      storeName: values.storeName,
+      ownerName: values.ownerName,
+      email: values.email
+    });
+    const updatedStoreDetails = { ...storeDetails, ...values };
+    setStoreDetails(updatedStoreDetails);
+    try {
+      localStorage.setItem('selfprint_onboarding_store_details', JSON.stringify(updatedStoreDetails));
+    } catch (e) {
+      console.warn('LocalStorage save failed:', e);
+    }
     setServerFieldErrors({});
+    console.log('[Onboarding] currentStep change: store_details -> bank_details');
+    console.log('[Onboarding] onboarding status: Step 1 completed, advancing to Step 2');
     goToStep('bank_details');
   };
 
-  const handleSaveBankDetails = (values: BankDetailsFormValues) => {
-    setBankDetails((prev) => ({ ...prev, ...values }));
+  const handleSaveBankDetails = async (values: BankDetailsFormValues) => {
+    console.log('[Onboarding] Submitting Bank Details (Step 2)...', {
+      bankName: values.bankName,
+      accountHolderName: values.accountHolderName,
+      ifscCode: values.ifscCode
+    });
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
     setServerFieldErrors({});
-    goToStep('review');
+
+    try {
+      // 1. Submit bank details to backend API and wait for response
+      const response = await storeOnboardingService.submitBankDetails(values);
+      console.log('[Onboarding] Bank Details API Response:', response);
+
+      if (response && response.success) {
+        // 6. Preserve form state after successful submission
+        const updatedBankDetails = { ...bankDetails, ...values };
+        setBankDetails(updatedBankDetails);
+        try {
+          localStorage.setItem('selfprint_onboarding_bank_details', JSON.stringify(updatedBankDetails));
+        } catch (e) {
+          console.warn('LocalStorage save failed:', e);
+        }
+
+        // 3. On success, advance to Step 3 instead of resetting to Step 2
+        // 9. Add logging for currentStep changes and onboarding status
+        console.log('[Onboarding] currentStep change: bank_details -> review');
+        console.log('[Onboarding] onboarding status: Step 2 completed successfully, advancing to Step 3 (Review)');
+        goToStep('review');
+      } else {
+        console.warn('[Onboarding] API response indicated non-success:', response);
+        setErrorMessage(response?.message || 'Failed to validate bank details. Please check your inputs.');
+      }
+    } catch (err: any) {
+      console.error('[Onboarding] Bank details submission error:', err);
+      const responseData = err?.response?.data;
+      const status = err?.response?.status;
+      const fieldErrors: Record<string, string> | undefined = responseData?.errors;
+
+      console.log('[Onboarding] API response error data:', responseData);
+
+      // 7 & 8: Only redirect back to Bank Details if the backend explicitly reports validation errors
+      // Show validation errors inline instead of silently returning to Step 2
+      if (fieldErrors && Object.keys(fieldErrors).length > 0) {
+        console.log('[Onboarding] Backend reported validation errors:', fieldErrors);
+        setServerFieldErrors(fieldErrors);
+        setErrorMessage(null); // Show errors inline, do not show generic top banner
+        goToStep('bank_details');
+      } else {
+        const serverMessage =
+          responseData?.message ||
+          responseData?.error ||
+          (status ? `Server Error (${status}). Please try again.` : 'Unable to validate bank details with server.');
+        setErrorMessage(serverMessage);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSubmitRegistration = async () => {
@@ -111,6 +202,7 @@ export const useStoreOnboarding = () => {
     setIsSubmitting(true);
     setErrorMessage(null);
     setServerFieldErrors({});
+    console.log('[Onboarding] Submitting final store registration...');
 
     try {
       const response = await storeOnboardingService.registerStore({
@@ -119,7 +211,20 @@ export const useStoreOnboarding = () => {
         confirmed: true
       });
 
+      console.log('[Onboarding] Registration API Response:', response);
+
       if (response.success) {
+        // Clear cached onboarding drafts upon successful registration
+        try {
+          localStorage.removeItem('selfprint_onboarding_store_details');
+          localStorage.removeItem('selfprint_onboarding_bank_details');
+        } catch (e) {
+          console.warn('LocalStorage cleanup warning:', e);
+        }
+
+        console.log('[Onboarding] currentStep change: review -> success');
+        console.log('[Onboarding] onboarding status: Store registration completed successfully');
+
         setRegistrationResult(response);
         setCountdown(5);
         goToStep('success');
@@ -127,9 +232,12 @@ export const useStoreOnboarding = () => {
         setErrorMessage(response.message || 'Registration failed. Please try again.');
       }
     } catch (err: any) {
+      console.error('[Onboarding] Registration submission error:', err);
       const responseData = err?.response?.data;
       const status = err?.response?.status;
       const fieldErrors: Record<string, string> | undefined = responseData?.errors;
+
+      console.log('[Onboarding] API response error data:', responseData);
 
       // Handle field-level validation errors (422 or any response with errors dictionary)
       if (fieldErrors && Object.keys(fieldErrors).length > 0) {
@@ -142,14 +250,16 @@ export const useStoreOnboarding = () => {
         );
 
         if (hasStoreError) {
+          console.log('[Onboarding] currentStep change: review -> store_details (validation errors)');
           goToStep('store_details');
         } else {
+          console.log('[Onboarding] currentStep change: review -> bank_details (validation errors)');
           goToStep('bank_details');
         }
         return;
       }
 
-      // Handle 500, network error, or unexpected exceptions (Top banner allowed ONLY for these)
+      // Handle 500, network error, or unexpected exceptions (Stay on review, show message)
       const serverMessage =
         responseData?.message ||
         responseData?.error ||
