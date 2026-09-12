@@ -592,5 +592,46 @@ export const printerService = {
     } catch (err) {
       console.warn('Could not sync first-login completion to backend:', err);
     }
+  },
+
+  /**
+   * Retrieves official Windows installer metadata
+   */
+  async getInstallerInfo(): Promise<{
+    version: string;
+    fileName: string;
+    sizeMB: string;
+    sizeBytes: number;
+    downloadUrl: string;
+    available: boolean;
+    platform: string;
+    supportedOs: string;
+  }> {
+    try {
+      const res = await apiClient.get('/connectors/installer-info');
+      if (res.data?.success) {
+        return res.data;
+      }
+    } catch (err) {
+      console.warn('Could not fetch installer info:', err);
+    }
+    return {
+      version: '1.0.0',
+      fileName: 'SelfPrint-Connector-Setup.exe',
+      sizeMB: '85.4 MB',
+      sizeBytes: 89548800,
+      downloadUrl: '/api/v1/connectors/download',
+      available: true,
+      platform: 'Windows (x64)',
+      supportedOs: 'Windows 10 / 11 (64-bit)'
+    };
+  },
+
+  /**
+   * Returns direct download URL for the Windows installer executable
+   */
+  getInstallerDownloadUrl(): string {
+    const baseURL = apiClient.defaults.baseURL || 'http://localhost:5000/api/v1';
+    return `${baseURL}/connectors/download`;
   }
 };

@@ -3,6 +3,7 @@ import path from 'path';
 import { env } from '../config/env';
 import { getDeviceIdentity, DeviceIdentity } from '../device/identity';
 import { logger } from '../utils/logger';
+import { systemPaths } from '../utils/paths';
 
 export interface ConnectorSettings {
   backendUrl: string;
@@ -30,8 +31,8 @@ class ConnectorStore {
   private identity!: DeviceIdentity;
 
   constructor() {
-    this.configDir = path.resolve(process.cwd(), 'config');
-    this.filePath = path.join(this.configDir, 'connector.json');
+    this.configDir = systemPaths.getConfigDir();
+    this.filePath = systemPaths.getConfigFile();
     this.load();
   }
 

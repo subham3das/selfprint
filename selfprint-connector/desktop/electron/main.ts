@@ -32,12 +32,29 @@ async function ensureHostService(): Promise<void> {
   }
 
   console.log('[Main] Host Service not detected on port 4500. Automatically spawning background daemon...');
+  
+  // 1. Packaged Production Daemon (inside extraResources: resources/host-service/)
+  const packagedDaemonPath = path.join(process.resourcesPath, 'host-service', 'dist', 'app.js');
+  
+  // 2. Development Paths
   const appRoot = path.resolve(__dirname, '../../');
   const tsAppPath = path.join(appRoot, 'src', 'app.ts');
   const jsAppPath = path.join(appRoot, 'dist', 'app.js');
 
   try {
-    if (isDev && fs.existsSync(tsAppPath)) {
+    if (app.isPackaged && fs.existsSync(packagedDaemonPath)) {
+      // In production packaged mode, run daemon using Electron's Node runtime
+      console.log(`[Main] Launching production host service from: ${packagedDaemonPath}`);
+      hostDaemonProcess = spawn(process.execPath, [packagedDaemonPath], {
+        cwd: path.dirname(packagedDaemonPath),
+        stdio: 'pipe',
+        env: {
+          ...process.env,
+          ELECTRON_RUN_AS_NODE: '1',
+          PORT: '4500'
+        }
+      });
+    } else if (isDev && fs.existsSync(tsAppPath)) {
       const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
       hostDaemonProcess = spawn(npxCmd, ['ts-node', 'src/app.ts'], {
         cwd: appRoot,
@@ -60,9 +77,19 @@ async function ensureHostService(): Promise<void> {
       hostDaemonProcess.stderr?.on('data', (data) => {
         console.error(`[HostDaemon ERR] ${data.toString().trim()}`);
       });
+      
+      // Watchdog Auto-Restart: Restores daemon automatically if crashed
       hostDaemonProcess.on('exit', (code) => {
         console.log(`[HostDaemon] Process exited with code ${code}`);
         hostDaemonProcess = null;
+        if (!isQuitting) {
+          console.warn('[Main] Host service daemon terminated unexpectedly. Auto-recovering in 3s...');
+          setTimeout(() => {
+            if (!isQuitting) {
+              ensureHostService().catch(() => {});
+            }
+          }, 3000);
+        }
       });
 
       // Wait up to 5 seconds for port 4500 to bind
@@ -412,3 +439,58 @@ ipcMain.on('show-notification', (_event, { title, body }: { title: string; body:
     new Notification({ title, body, icon: getAppIcon() }).show();
   }
 });
+
+// Windows Auto-Start on System Boot
+ipcMain.handle('get-auto-start', () => {
+  try {
+    return app.getLoginItemSettings().openAtLogin;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle('set-auto-start', (_event, enabled: boolean) => {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      args: ['--hidden']
+    });
+    return app.getLoginItemSettings().openAtLogin;
+  } catch (err) {
+    console.error('Failed to update login item settings:', err);
+    return false;
+  }
+});
+
+// ProgramData Folders
+function getProgramDataPaths() {
+  const base = process.platform === 'win32'
+    ? path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'SelfPrint')
+    : path.join(process.env.HOME || process.cwd(), '.selfprint');
+  return {
+    base,
+    config: path.join(base, 'config'),
+    logs: path.join(base, 'logs')
+  };
+}
+
+ipcMain.on('open-logs-folder', () => {
+  const { logs } = getProgramDataPaths();
+  try {
+    if (!fs.existsSync(logs)) fs.mkdirSync(logs, { recursive: true });
+    shell.openPath(logs);
+  } catch (err) {
+    console.error('Failed to open logs folder:', err);
+  }
+});
+
+ipcMain.on('open-config-folder', () => {
+  const { config } = getProgramDataPaths();
+  try {
+    if (!fs.existsSync(config)) fs.mkdirSync(config, { recursive: true });
+    shell.openPath(config);
+  } catch (err) {
+    console.error('Failed to open config folder:', err);
+  }
+});
+

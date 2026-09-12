@@ -1,6 +1,8 @@
 {
   "name": "selfprint-connector-desktop",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "description": "SelfPrint Hardware Connector & Spooler Daemon for Windows",
+  "author": "SelfPrint Cloud Team",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
@@ -8,11 +10,69 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "desktop": "npm run build:electron && concurrently -k \"vite\" \"electron .\""
+    "desktop": "npm run build:electron && concurrently -k \"vite\" \"electron .\"",
+    "dist": "npm run build && npm run build:electron && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.selfprint.connector",
+    "productName": "SelfPrint Connector",
+    "directories": {
+      "output": "../release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist",
+        "to": "host-service/dist"
+      },
+      {
+        "from": "../node_modules",
+        "to": "host-service/node_modules"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/logoapp.png",
+      "artifactName": "${productName}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SelfPrint Connector",
+      "runAfterFinish": true,
+      "uninstallDisplayName": "SelfPrint Connector",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable.${ext}"
+    }
   },
   "dependencies": {
     "@tanstack/react-query": "^5.66.0",
     "clsx": "^2.1.1",
+    "electron-updater": "^6.8.9",
     "framer-motion": "^12.4.2",
     "lucide-react": "^0.475.0",
     "react": "^18.3.1",
@@ -29,6 +89,7 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
     "electron": "^34.2.0",
+    "electron-builder": "^26.15.3",
     "postcss": "^8.5.2",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",

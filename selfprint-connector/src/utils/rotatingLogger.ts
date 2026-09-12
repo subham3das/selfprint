@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { systemPaths } from './paths';
 
 export type LogChannel = 'connector' | 'print' | 'printer';
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
@@ -18,7 +19,7 @@ export class RotatingLogger {
   private currentLogLevel: LogLevel = 'INFO';
 
   constructor() {
-    this.logDir = path.resolve(process.cwd(), 'logs');
+    this.logDir = systemPaths.getLogsDir();
     this.ensureDirectory();
     this.cleanOldLogs();
     // Run cleanup once every 24 hours

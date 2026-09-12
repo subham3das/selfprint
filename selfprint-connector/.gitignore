@@ -6,3 +6,6 @@ config/config.json
 .env
 .DS_Store
 Thumbs.db
+release/
+desktop/dist/
+desktop/dist-electron/

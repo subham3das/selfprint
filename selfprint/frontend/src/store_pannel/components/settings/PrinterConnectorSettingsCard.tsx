@@ -44,6 +44,7 @@ export const PrinterConnectorSettingsCard: React.FC = () => {
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
+  const [installerInfo, setInstallerInfo] = useState<{ version: string; sizeMB: string; fileName: string } | null>(null);
   const [isUnpairing, setIsUnpairing] = useState(false);
 
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -130,6 +131,9 @@ export const PrinterConnectorSettingsCard: React.FC = () => {
   useEffect(() => {
     fetchStatus();
     handleGenerateCode();
+    printerService.getInstallerInfo().then((info) => {
+      if (info) setInstallerInfo(info);
+    }).catch(() => {});
 
     const interval = setInterval(fetchStatus, 5000);
     return () => {
@@ -396,16 +400,31 @@ export const PrinterConnectorSettingsCard: React.FC = () => {
             )}
 
             {/* Download Link */}
-            <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between">
-              <span className="text-xs text-slate-600 font-medium">Need the Windows app?</span>
-              <a
-                href="/download/SelfPrint-Connector-Setup.exe"
-                download
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download Desktop Connector</span>
-              </a>
+            <div className="pt-4 border-t border-slate-200/80">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-800">SelfPrint Desktop Connector</span>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/60">
+                      v{installerInfo?.version || '1.0.0'}
+                    </span>
+                    <span className="text-[10px] font-medium text-slate-500">
+                      {installerInfo?.sizeMB || '85 MB'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Windows 10 / 11 (64-bit) installer with auto-restarting background spooler.
+                  </p>
+                </div>
+                <a
+                  href={printerService.getInstallerDownloadUrl()}
+                  download="SelfPrint-Connector-Setup.exe"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white font-medium text-xs shadow-sm hover:shadow transition-all active:scale-95"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Setup.exe</span>
+                </a>
+              </div>
             </div>
           </div>
         </div>

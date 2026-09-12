@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search,
   Filter,
@@ -29,6 +30,189 @@ interface QueueTableCardProps {
   onStatusChange: (jobId: string, newStatus: QueueJobStatus) => void;
   onDeleteJob: (jobId: string) => void;
 }
+
+const QueueRowActionMenu: React.FC<{
+  job: QueueJobItem;
+  onViewDetails: (job: QueueJobItem) => void;
+  onStatusChange: (jobId: string, newStatus: QueueJobStatus) => void;
+  onDeleteJob: (jobId: string) => void;
+}> = ({ job, onViewDetails, onStatusChange, onDeleteJob }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const updatePosition = () => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const menuWidth = 180;
+    const menuHeight = 210;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUpward = spaceBelow < menuHeight + 10 && rect.top > menuHeight;
+    const top = openUpward ? rect.top - menuHeight - 6 : rect.bottom + 6;
+
+    let left = rect.right - menuWidth;
+    if (left < 10) left = 10;
+    if (left + menuWidth > window.innerWidth - 10) {
+      left = window.innerWidth - menuWidth - 10;
+    }
+
+    setCoords({ top, left });
+  };
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isOpen) {
+      updatePosition();
+      setIsOpen(true);
+    } else {
+      setIsOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+
+    const handleScrollOrResize = () => setIsOpen(false);
+
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    const timer = setTimeout(() => {
+      window.addEventListener('scroll', handleScrollOrResize, true);
+      window.addEventListener('resize', handleScrollOrResize);
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [isOpen]);
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        onClick={handleToggle}
+        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer active:scale-95"
+        title="More options"
+      >
+        <MoreVertical className="w-4 h-4" />
+      </button>
+
+      {isOpen &&
+        createPortal(
+          <motion.div
+            ref={menuRef}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.12 }}
+            style={{
+              position: 'fixed',
+              top: `${coords.top}px`,
+              left: `${coords.left}px`,
+              zIndex: 9999
+            }}
+            className="w-44 bg-white border border-slate-200 rounded-xl shadow-xl p-1 text-left text-xs space-y-0.5"
+          >
+            <button
+              onClick={() => {
+                setIsOpen(false);
+                onViewDetails(job);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors font-medium cursor-pointer"
+            >
+              <Eye className="w-3.5 h-3.5 text-slate-400" />
+              <span>View Details</span>
+            </button>
+
+            {job.status === 'Waiting' && (
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  onStatusChange(job.id, 'Printing');
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors font-medium cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Mark Printing</span>
+              </button>
+            )}
+
+            {job.status === 'Printing' && (
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  onStatusChange(job.id, 'Completed');
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors font-medium cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Mark Completed</span>
+              </button>
+            )}
+
+            {(job.status === 'Failed' || job.status === 'Completed') && (
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  onStatusChange(job.id, 'Waiting');
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors font-medium cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                <span>Print Again / Retry</span>
+              </button>
+            )}
+
+            {job.status === 'Waiting' && (
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  onStatusChange(job.id, 'Cancelled');
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors font-medium cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span>Cancel Job</span>
+              </button>
+            )}
+
+            <div className="border-t border-slate-100 my-1" />
+
+            <button
+              onClick={() => {
+                setIsOpen(false);
+                onDeleteJob(job.id);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors font-medium cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+              <span>Delete from Queue</span>
+            </button>
+          </motion.div>,
+          document.body
+        )}
+    </div>
+  );
+};
 
 export const QueueTableCard: React.FC<QueueTableCardProps> = ({
   jobs,
@@ -351,108 +535,12 @@ export const QueueTableCard: React.FC<QueueTableCardProps> = ({
                         <Eye className="w-4 h-4" />
                       </button>
 
-                      <div className="relative">
-                        <button
-                          onClick={() =>
-                            setActiveMenuJobId(
-                              activeMenuJobId === job.id ? null : job.id
-                            )
-                          }
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                          title="More options"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
-
-                        {/* Action Popover Menu */}
-                        <AnimatePresence>
-                          {activeMenuJobId === job.id && (
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.95 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.95 }}
-                              transition={{ duration: 0.1 }}
-                              className="absolute right-0 top-8 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-1 text-left text-xs space-y-0.5"
-                            >
-                              <button
-                                onClick={() => {
-                                  setActiveMenuJobId(null);
-                                  onViewDetails(job);
-                                }}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors font-medium"
-                              >
-                                <Eye className="w-3.5 h-3.5 text-slate-400" />
-                                <span>View Details</span>
-                              </button>
-
-                              {job.status === 'Waiting' && (
-                                <button
-                                  onClick={() => {
-                                    setActiveMenuJobId(null);
-                                    onStatusChange(job.id, 'Printing');
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors font-medium"
-                                >
-                                  <Play className="w-3.5 h-3.5 text-indigo-600" />
-                                  <span>Mark Printing</span>
-                                </button>
-                              )}
-
-                              {job.status === 'Printing' && (
-                                <button
-                                  onClick={() => {
-                                    setActiveMenuJobId(null);
-                                    onStatusChange(job.id, 'Completed');
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors font-medium"
-                                >
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                  <span>Mark Completed</span>
-                                </button>
-                              )}
-
-                              {(job.status === 'Failed' || job.status === 'Completed') && (
-                                <button
-                                  onClick={() => {
-                                    setActiveMenuJobId(null);
-                                    onStatusChange(job.id, 'Waiting');
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors font-medium"
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
-                                  <span>Print Again / Retry</span>
-                                </button>
-                              )}
-
-                              {job.status === 'Waiting' && (
-                                <button
-                                  onClick={() => {
-                                    setActiveMenuJobId(null);
-                                    onStatusChange(job.id, 'Cancelled');
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors font-medium"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                                  <span>Cancel Job</span>
-                                </button>
-                              )}
-
-                              <div className="border-t border-slate-100 my-1" />
-
-                              <button
-                                onClick={() => {
-                                  setActiveMenuJobId(null);
-                                  onDeleteJob(job.id);
-                                }}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors font-medium"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                                <span>Delete from Queue</span>
-                              </button>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
+                      <QueueRowActionMenu
+                        job={job}
+                        onViewDetails={onViewDetails}
+                        onStatusChange={onStatusChange}
+                        onDeleteJob={onDeleteJob}
+                      />
                     </div>
                   </td>
                 </tr>

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Eye,
   MoreVertical,
@@ -7,7 +8,7 @@ import {
   RotateCcw,
   Trash2
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { JobItem, QueueTab } from '../types/dashboard.types';
 
 interface QueueCardProps {
@@ -17,6 +18,136 @@ interface QueueCardProps {
   onViewJob: (job: JobItem) => void;
   onViewFullQueue?: () => void;
 }
+
+const QueueCardRowActionMenu: React.FC<{
+  job: JobItem;
+  onViewJob: (job: JobItem) => void;
+}> = ({ job, onViewJob }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const updatePosition = () => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const menuWidth = 180;
+    const menuHeight = 135;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUpward = spaceBelow < menuHeight + 10 && rect.top > menuHeight;
+    const top = openUpward ? rect.top - menuHeight - 6 : rect.bottom + 6;
+
+    let left = rect.right - menuWidth;
+    if (left < 10) left = 10;
+    if (left + menuWidth > window.innerWidth - 10) {
+      left = window.innerWidth - menuWidth - 10;
+    }
+
+    setCoords({ top, left });
+  };
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isOpen) {
+      updatePosition();
+      setIsOpen(true);
+    } else {
+      setIsOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
+      setIsOpen(false);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    const handleScrollOrResize = () => setIsOpen(false);
+
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('keydown', handleKeyDown);
+    const timer = setTimeout(() => {
+      window.addEventListener('scroll', handleScrollOrResize, true);
+      window.addEventListener('resize', handleScrollOrResize);
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [isOpen]);
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        onClick={handleToggle}
+        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer active:scale-95"
+        title="More options"
+      >
+        <MoreVertical className="w-4 h-4" />
+      </button>
+
+      {isOpen &&
+        createPortal(
+          <motion.div
+            ref={menuRef}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.12 }}
+            style={{
+              position: 'fixed',
+              top: `${coords.top}px`,
+              left: `${coords.left}px`,
+              zIndex: 9999
+            }}
+            className="w-44 bg-white border border-slate-200 rounded-xl shadow-xl p-1 text-left text-xs space-y-0.5"
+          >
+            <button
+              onClick={() => {
+                setIsOpen(false);
+                onViewJob(job);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors font-medium cursor-pointer"
+            >
+              <Eye className="w-3.5 h-3.5 text-slate-400" />
+              <span>Preview Job</span>
+            </button>
+            <button
+              onClick={() => {
+                setIsOpen(false);
+                alert(`Reprinting ${job.fileName}...`);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors font-medium cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+              <span>Reprint</span>
+            </button>
+            <button
+              onClick={() => {
+                setIsOpen(false);
+                alert(`Job ${job.jobCode} removed from queue.`);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors font-medium cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+              <span>Cancel / Delete</span>
+            </button>
+          </motion.div>,
+          document.body
+        )}
+    </div>
+  );
+};
 
 export const QueueCard: React.FC<QueueCardProps> = ({
   jobs,
@@ -220,63 +351,7 @@ export const QueueCard: React.FC<QueueCardProps> = ({
                         <Eye className="w-4 h-4" />
                       </button>
 
-                      <div className="relative">
-                        <button
-                          onClick={() =>
-                            setActiveMenuJobId(
-                              activeMenuJobId === job.id ? null : job.id
-                            )
-                          }
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                          title="More options"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
-
-                        {/* Row Context Menu */}
-                        <AnimatePresence>
-                          {activeMenuJobId === job.id && (
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.95 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.95 }}
-                              transition={{ duration: 0.1 }}
-                              className="absolute right-0 top-8 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-30 p-1 text-left text-xs"
-                            >
-                              <button
-                                onClick={() => {
-                                  setActiveMenuJobId(null);
-                                  onViewJob(job);
-                                }}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors font-medium"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>Preview Job</span>
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setActiveMenuJobId(null);
-                                  alert(`Reprinting ${job.fileName}...`);
-                                }}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors font-medium"
-                              >
-                                <RotateCcw className="w-3.5 h-3.5" />
-                                <span>Reprint</span>
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setActiveMenuJobId(null);
-                                  alert(`Job ${job.jobCode} removed from queue.`);
-                                }}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors font-medium"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>Cancel / Delete</span>
-                              </button>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
+                      <QueueCardRowActionMenu job={job} onViewJob={onViewJob} />
                     </div>
                   </td>
                 </tr>

@@ -9,6 +9,10 @@ export interface ElectronAPI {
   showNotification: (title: string, body: string) => void;
   onNavigate: (callback: (tab: string) => void) => void;
   onTriggerAction: (callback: (action: string) => void) => void;
+  getAutoStart: () => Promise<boolean>;
+  setAutoStart: (enabled: boolean) => Promise<boolean>;
+  openLogsFolder: () => void;
+  openConfigFolder: () => void;
 }
 
 const api: ElectronAPI = {
@@ -23,7 +27,11 @@ const api: ElectronAPI = {
   },
   onTriggerAction: (callback) => {
     ipcRenderer.on('trigger-action', (_event, action) => callback(action));
-  }
+  },
+  getAutoStart: () => ipcRenderer.invoke('get-auto-start'),
+  setAutoStart: (enabled: boolean) => ipcRenderer.invoke('set-auto-start', enabled),
+  openLogsFolder: () => ipcRenderer.send('open-logs-folder'),
+  openConfigFolder: () => ipcRenderer.send('open-config-folder')
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

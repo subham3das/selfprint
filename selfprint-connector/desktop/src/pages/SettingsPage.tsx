@@ -29,6 +29,34 @@ export const SettingsPage: React.FC = () => {
   const [runAsService, setRunAsService] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
+  React.useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (api?.getAutoStart) {
+      api.getAutoStart().then((enabled: boolean) => {
+        setLaunchOnStartup(enabled);
+      }).catch(() => {});
+    }
+  }, []);
+
+  const handleToggleAutoStart = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    setLaunchOnStartup(checked);
+    const api = (window as any).electronAPI;
+    if (api?.setAutoStart) {
+      try {
+        const result = await api.setAutoStart(checked);
+        setLaunchOnStartup(result);
+        showToast(
+          'Windows Startup',
+          result ? 'Connector set to launch automatically on Windows boot.' : 'Removed from Windows startup apps.',
+          'info'
+        );
+      } catch (err) {
+        showToast('Startup Error', 'Could not update startup setting.', 'error');
+      }
+    }
+  };
+
   const handleSave = () => {
     setIsSaving(true);
     setTimeout(() => {
@@ -43,10 +71,25 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleOpenLogs = () => {
-    if ((window as any).electronAPI?.openPath) {
-      (window as any).electronAPI.openPath('d:\\project\\SELFPRINT SYSTEM\\selfprint-connector\\logs');
+    const api = (window as any).electronAPI;
+    if (api?.openLogsFolder) {
+      api.openLogsFolder();
+      showToast('Logs Folder', 'Opened %PROGRAMDATA%\\SelfPrint\\logs in File Explorer.', 'info');
+    } else if (api?.openPath) {
+      api.openPath('C:\\ProgramData\\SelfPrint\\logs');
+      showToast('Logs Folder', 'Opening logs directory in File Explorer.', 'info');
     }
-    showToast('Logs Folder', 'Opening logs directory in File Explorer.', 'info');
+  };
+
+  const handleOpenConfig = () => {
+    const api = (window as any).electronAPI;
+    if (api?.openConfigFolder) {
+      api.openConfigFolder();
+      showToast('Config Folder', 'Opened %PROGRAMDATA%\\SelfPrint\\config in File Explorer.', 'info');
+    } else if (api?.openPath) {
+      api.openPath('C:\\ProgramData\\SelfPrint\\config');
+      showToast('Config Folder', 'Opening config directory in File Explorer.', 'info');
+    }
   };
 
   const handleClearCache = () => {
@@ -177,7 +220,7 @@ export const SettingsPage: React.FC = () => {
             <input
               type="checkbox"
               checked={launchOnStartup}
-              onChange={(e) => setLaunchOnStartup(e.target.checked)}
+              onChange={handleToggleAutoStart}
               className="w-4 h-4 rounded text-blue-600 bg-slate-900 border-slate-700"
             />
           </label>
@@ -224,7 +267,15 @@ export const SettingsPage: React.FC = () => {
             icon={<FolderOpen className="w-3.5 h-3.5" />}
             onClick={handleOpenLogs}
           >
-            Open Logs Directory
+            Open Logs (%ProgramData%)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<FolderOpen className="w-3.5 h-3.5" />}
+            onClick={handleOpenConfig}
+          >
+            Open Config Directory
           </Button>
           <Button
             variant="outline"

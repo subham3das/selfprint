@@ -11,7 +11,8 @@
     "desktop:install": "npm --prefix desktop install",
     "desktop:dev": "npm --prefix desktop run dev",
     "desktop:build": "npm --prefix desktop run build && npm --prefix desktop run build:electron",
-    "desktop:start": "npm --prefix desktop run desktop"
+    "desktop:start": "npm --prefix desktop run desktop",
+    "desktop:dist": "npm run build && npm --prefix desktop run dist"
   },
   "keywords": [
     "selfprint",
