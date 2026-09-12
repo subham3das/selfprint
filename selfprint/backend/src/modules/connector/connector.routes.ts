@@ -22,6 +22,7 @@ connectorRouter.post('/heartbeat', (req, res) => connectorController.recordHeart
 // Store & Website downloads Windows desktop installer
 connectorRouter.get('/installer-info', (req, res) => connectorController.getInstallerInfo(req, res));
 connectorRouter.get('/download', (req, res) => connectorController.downloadInstaller(req, res));
+connectorRouter.get('/version', (req, res) => connectorController.getVersion(req, res));
 
 // Remote command dispatch
 connectorRouter.post('/command', (req, res) => connectorController.dispatchRemoteCommand(req, res));

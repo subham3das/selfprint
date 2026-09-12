@@ -39,6 +39,10 @@ export interface EnvironmentConfig {
     FROM_NAME: string;
     FROM_ADDRESS: string;
   };
+  GITHUB: {
+    OWNER: string;
+    REPO: string;
+  };
   isProduction: boolean;
   isDevelopment: boolean;
   isTest: boolean;
@@ -82,6 +86,10 @@ export const env: EnvironmentConfig = {
   EMAIL: {
     FROM_NAME: process.env.EMAIL_FROM_NAME || 'Self Print',
     FROM_ADDRESS: process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER || 'noreply@selfprint.com'
+  },
+  GITHUB: {
+    OWNER: process.env.GITHUB_OWNER || 'subham3das',
+    REPO: process.env.GITHUB_REPO || 'selfprint'
   },
   isProduction: process.env.NODE_ENV === 'production',
   isDevelopment: process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test',

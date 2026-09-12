@@ -67,12 +67,7 @@ export const ConnectorInstallCard: React.FC<ConnectorInstallCardProps> = ({
 
   const handleDownload = () => {
     const downloadUrl = printerService.getInstallerDownloadUrl();
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.setAttribute('download', 'SelfPrint-Connector-Setup.exe');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    window.location.href = downloadUrl;
   };
 
   const handleLaunchProtocol = () => {
