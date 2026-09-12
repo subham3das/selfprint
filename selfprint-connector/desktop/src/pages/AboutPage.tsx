@@ -73,8 +73,21 @@ export const AboutPage: React.FC = () => {
     }
   };
 
-  const handleCheckUpdates = () => {
-    showToast('Update Check', 'You are running the latest production release (v0.2.0).', 'info');
+  const updateStatus = useAppStore((s) => s.updateStatus);
+
+  const handleCheckUpdates = async () => {
+    if ((window as any).electronAPI?.checkForUpdates) {
+      showToast('Checking for updates', 'Connecting to GitHub Releases...', 'info');
+      await (window as any).electronAPI.checkForUpdates();
+    } else {
+      showToast('Update Check', `You are running the latest release (v${health?.connectorVersion || '1.0.0'}).`, 'info');
+    }
+  };
+
+  const handleRestartInstall = () => {
+    if ((window as any).electronAPI?.restartAndInstall) {
+      (window as any).electronAPI.restartAndInstall();
+    }
   };
 
   return (
@@ -91,7 +104,7 @@ export const AboutPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-slate-100">SelfPrint Connector</h1>
               <Badge variant="success" size="sm">
-                v{health?.connectorVersion || '0.2.0'}
+                v{updateStatus.currentVersion || health?.connectorVersion || '1.0.0'}
               </Badge>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -101,14 +114,32 @@ export const AboutPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<RefreshCw className="w-3.5 h-3.5" />}
-            onClick={handleCheckUpdates}
-          >
-            Check Updates
-          </Button>
+          {updateStatus.state === 'DOWNLOADED' ? (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<RefreshCw className="w-3.5 h-3.5" />}
+              onClick={handleRestartInstall}
+            >
+              Restart to Install v{updateStatus.latestVersion}
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<RefreshCw className={`w-3.5 h-3.5 ${updateStatus.state === 'CHECKING' ? 'animate-spin text-blue-400' : ''}`} />}
+              onClick={handleCheckUpdates}
+              disabled={updateStatus.state === 'CHECKING' || updateStatus.state === 'DOWNLOADING'}
+            >
+              {updateStatus.state === 'CHECKING'
+                ? 'Checking...'
+                : updateStatus.state === 'DOWNLOADING'
+                ? `Downloading (${updateStatus.progress?.percent || 0}%)`
+                : updateStatus.state === 'AVAILABLE'
+                ? 'Update Available'
+                : 'Check Updates'}
+            </Button>
+          )}
         </div>
       </div>
 

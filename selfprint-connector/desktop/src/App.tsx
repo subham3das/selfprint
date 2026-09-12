@@ -33,11 +33,15 @@ export const queryClient = new QueryClient({
   }
 });
 
+import { UpdateBanner } from './components/updater/UpdateBanner';
+import { UpdateModal } from './components/updater/UpdateModal';
+
 export const AppContent: React.FC = () => {
   const activeTab = useAppStore((s) => s.activeTab);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const theme = useAppStore((s) => s.theme);
   const showToast = useAppStore((s) => s.showToast);
+  const setUpdateStatus = useAppStore((s) => s.setUpdateStatus);
 
   useEffect(() => {
     // Apply theme class
@@ -52,8 +56,18 @@ export const AppContent: React.FC = () => {
     // Pass queryClient into socket so it can invalidate/clear caches on events
     initDesktopSocket(queryClient, BACKEND_URL);
 
-    // ── Tray / IPC action handlers ────────────────────────────────────────
+    // ── Live electron-updater subscription ────────────────────────────────
+    let cleanupUpdater: (() => void) | undefined;
     if ((window as any).electronAPI) {
+      if ((window as any).electronAPI.onUpdateStatus) {
+        cleanupUpdater = (window as any).electronAPI.onUpdateStatus((status: any) => {
+          setUpdateStatus(status);
+        });
+        (window as any).electronAPI.getUpdateStatus().then((initialStatus: any) => {
+          if (initialStatus) setUpdateStatus(initialStatus);
+        }).catch(() => {});
+      }
+
       (window as any).electronAPI.onNavigate((tab: string) => {
         setActiveTab(tab as NavigationTab);
       });
@@ -86,7 +100,11 @@ export const AppContent: React.FC = () => {
         }
       });
     }
-  }, [setActiveTab, theme, showToast]);
+
+    return () => {
+      if (cleanupUpdater) cleanupUpdater();
+    };
+  }, [setActiveTab, theme, showToast, setUpdateStatus]);
 
   const renderActivePage = () => {
     switch (activeTab) {
@@ -104,6 +122,9 @@ export const AppContent: React.FC = () => {
     <div className="h-screen w-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
       {/* Native Windows Title Bar */}
       <TitleBar />
+
+      {/* Realtime Update Progress Banner */}
+      <UpdateBanner />
 
       {/* Main App Layout */}
       <div className="flex-1 flex overflow-hidden">
@@ -125,6 +146,9 @@ export const AppContent: React.FC = () => {
           </AnimatePresence>
         </main>
       </div>
+
+      {/* Modal Dialog when Update is Downloaded */}
+      <UpdateModal />
 
       {/* Toast Notification Container */}
       <ToastContainer />

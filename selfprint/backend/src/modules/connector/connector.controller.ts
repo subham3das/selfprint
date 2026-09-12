@@ -230,7 +230,8 @@ export class ConnectorController {
         timestamp: new Date().toISOString()
       });
 
-      logger.info(`🤝 Connector ${connectorId} successfully paired to Store ${codeRecord.storeId} (${storeName})`);
+      logger.info(`[Connector paired] Connector ${connectorId} paired with store ${codeRecord.storeId} (${storeName})`);
+      logger.info(`[Status updated in MongoDB] Connector ${connectorId} marked PAIRED in MongoDB`);
 
       res.status(200).json({
         success: true,
@@ -484,6 +485,15 @@ export class ConnectorController {
         query.storeId = storeId;
       }
 
+      // If connector is already paired in DB, keep authenticated true even if daemon token sync was delayed
+      const existingConn = await ConnectorModel.findOne(query);
+      if (existingConn && existingConn.deviceToken) {
+        updateData.authenticated = true;
+        if (updateData.state === 'NOT_PAIRED') {
+          updateData.state = 'READY';
+        }
+      }
+
       const connector = await ConnectorModel.findOneAndUpdate(
         query,
         { $set: updateData },
@@ -491,6 +501,9 @@ export class ConnectorController {
       );
 
       if (connector) {
+        logger.info(`[Heartbeat acknowledged] Heartbeat recorded for connector ${connectorId || connector.connectorId}`);
+        logger.info(`[Status updated in MongoDB] Connector ${connectorId || connector.connectorId} status updated: status=${updateData.status}, state=${updateData.state}, auth=${updateData.authenticated}`);
+
         connectorRegistry.recordHeartbeat(connectorId, updateData.health);
 
         // Broadcast heartbeat event to store room with full fields

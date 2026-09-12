@@ -9,6 +9,7 @@ export interface ToastItem {
 }
 
 import { ConnectionState } from '../types/connectionState';
+import { UpdateStatusPayload } from '../types/updater';
 export type { ConnectionState };
 export type RealtimeConnectionState = ConnectionState;
 
@@ -24,6 +25,9 @@ interface AppState {
   connectionState: RealtimeConnectionState;
   /** True while the WebSocket is actively trying to reconnect after a drop */
   isSocketReconnecting: boolean;
+  /** Live automatic update status */
+  updateStatus: UpdateStatusPayload;
+  isUpdateModalOpen: boolean;
 
   // Actions
   setActiveTab: (tab: NavigationTab) => void;
@@ -42,11 +46,26 @@ interface AppState {
   setBackendConnected: (backend: boolean) => void;
   setConnectionState: (state: RealtimeConnectionState) => void;
   setSocketReconnecting: (reconnecting: boolean) => void;
+  setUpdateStatus: (status: UpdateStatusPayload) => void;
+  setUpdateModalOpen: (open: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   activeTab: 'dashboard',
   theme: (localStorage.getItem('selfprint_theme') as 'dark' | 'light') || 'dark',
+  updateStatus: {
+    state: 'IDLE',
+    currentVersion: '1.0.0'
+  },
+  isUpdateModalOpen: false,
+  setUpdateStatus: (status) => {
+    set({
+      updateStatus: status,
+      // Open modal automatically when download is complete
+      ...(status.state === 'DOWNLOADED' ? { isUpdateModalOpen: true } : {})
+    });
+  },
+  setUpdateModalOpen: (open) => set({ isUpdateModalOpen: open }),
   notifications: [
     {
       id: 'n_initial_1',

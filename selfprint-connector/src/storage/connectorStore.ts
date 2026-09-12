@@ -60,6 +60,7 @@ class ConnectorStore {
     this.data = {
       connectorId: fileContent.connectorId || this.identity.connectorId,
       machineId: this.identity.machineId,
+      storeId: fileContent.storeId || undefined,
       deviceToken: fileContent.deviceToken || env.DEVICE_TOKEN || null,
       connectorVersion: this.identity.connectorVersion,
       lastHeartbeat: fileContent.lastHeartbeat || null,
@@ -105,6 +106,27 @@ class ConnectorStore {
     this.data.deviceToken = token;
     this.save();
     logger.info('Device authentication token saved securely.');
+  }
+
+  public setPairing(deviceToken: string, storeId?: string): void {
+    this.data.deviceToken = deviceToken;
+    if (storeId) {
+      this.data.storeId = storeId;
+    }
+    this.save();
+    logger.info(`[Connector paired] Connector ${this.data.connectorId} paired with store ${storeId || this.data.storeId || 'unknown'}`);
+  }
+
+  public clearPairing(): void {
+    this.data.deviceToken = null;
+    this.data.storeId = undefined;
+    this.save();
+    logger.info(`[Connector paired] Connector ${this.data.connectorId} pairing cleared.`);
+  }
+
+  public setStoreId(storeId: string): void {
+    this.data.storeId = storeId;
+    this.save();
   }
 
   public isRegistered(): boolean {

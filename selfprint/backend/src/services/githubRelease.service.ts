@@ -68,9 +68,9 @@ class GitHubReleaseService {
         throw new Error('Latest release contains no downloadable assets.');
       }
 
-      // Priority asset search: exact "SelfPrint Connector-Setup.exe" -> normalized setup exe -> any .exe
+      // Priority asset search: exact "SelfPrint Connector Setup.exe" / "SelfPrint Connector-Setup.exe" -> normalized setup exe -> any .exe
       const targetAsset =
-        data.assets.find((a) => a.name === 'SelfPrint Connector-Setup.exe') ||
+        data.assets.find((a) => a.name === 'SelfPrint Connector Setup.exe' || a.name === 'SelfPrint Connector-Setup.exe') ||
         data.assets.find((a) => a.name.replace(/[\s._-]+/g, '').toLowerCase() === 'selfprintconnectorsetup.exe') ||
         data.assets.find((a) => a.name.endsWith('.exe') && a.name.toLowerCase().includes('setup')) ||
         data.assets.find((a) => a.name.endsWith('.exe'));

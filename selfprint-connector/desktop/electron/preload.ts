@@ -13,6 +13,12 @@ export interface ElectronAPI {
   setAutoStart: (enabled: boolean) => Promise<boolean>;
   openLogsFolder: () => void;
   openConfigFolder: () => void;
+  saveConfig: (data: { deviceToken?: string; storeId?: string }) => Promise<boolean>;
+  clearConfig: () => Promise<boolean>;
+  checkForUpdates: () => Promise<any>;
+  restartAndInstall: () => Promise<void>;
+  getUpdateStatus: () => Promise<any>;
+  onUpdateStatus: (callback: (status: any) => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -31,7 +37,19 @@ const api: ElectronAPI = {
   getAutoStart: () => ipcRenderer.invoke('get-auto-start'),
   setAutoStart: (enabled: boolean) => ipcRenderer.invoke('set-auto-start', enabled),
   openLogsFolder: () => ipcRenderer.send('open-logs-folder'),
-  openConfigFolder: () => ipcRenderer.send('open-config-folder')
+  openConfigFolder: () => ipcRenderer.send('open-config-folder'),
+  saveConfig: (data) => ipcRenderer.invoke('save-config', data),
+  clearConfig: () => ipcRenderer.invoke('clear-config'),
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  restartAndInstall: () => ipcRenderer.invoke('updater:restart'),
+  getUpdateStatus: () => ipcRenderer.invoke('updater:get-status'),
+  onUpdateStatus: (callback) => {
+    const handler = (_event: any, status: any) => callback(status);
+    ipcRenderer.on('updater:status-changed', handler);
+    return () => {
+      ipcRenderer.removeListener('updater:status-changed', handler);
+    };
+  }
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

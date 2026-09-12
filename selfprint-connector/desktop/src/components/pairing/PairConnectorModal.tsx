@@ -94,8 +94,18 @@ export const PairConnectorModal: React.FC<PairConnectorModalProps> = ({
           })
         });
       } catch (e) {
-        // Daemon will read from backend or restart
+        // HTTP sync fallback handled below
       }
+
+      // Direct fallback via Electron IPC if available (zero network dependency)
+      try {
+        if ((window as any).electronAPI?.saveConfig) {
+          await (window as any).electronAPI.saveConfig({
+            deviceToken: res.data.deviceToken,
+            storeId
+          });
+        }
+      } catch {}
 
       showToast('Connector Paired', `Successfully linked to ${storeName}!`, 'success');
       addActivity({

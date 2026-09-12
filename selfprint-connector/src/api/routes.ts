@@ -310,23 +310,30 @@ export function startLocalApiServer(port?: number): http.Server {
       // 10. POST /pair (saves deviceToken and storeId from UI pairing)
       if ((pathname === '/pair' || pathname === '/api/v1/pair') && method === 'POST') {
         const body = await readJsonBody(req);
-        if (body.deviceToken) {
-          connectorStore.setDeviceToken(body.deviceToken);
+        const tokenToSave = body.deviceToken || body.token;
+        if (tokenToSave) {
+          connectorStore.setPairing(tokenToSave, body.storeId);
+        } else if (body.storeId) {
+          connectorStore.setStoreId(body.storeId);
         }
-        if (body.storeId) {
-          const d = connectorStore.getData();
-          d.storeId = body.storeId;
-          connectorStore.save();
-        }
+
         // Force reconnect daemon socket with new token and emit immediate heartbeat
         const s = getSocket();
         if (s) {
+          const curData = connectorStore.getData();
+          s.auth = {
+            connectorId: curData.connectorId,
+            machineId: curData.machineId,
+            storeId: curData.storeId,
+            deviceToken: curData.deviceToken || undefined,
+            token: curData.deviceToken || undefined
+          };
           s.disconnect().connect();
         }
         sendHeartbeat().catch(() => {});
 
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Pairing saved locally' }));
+        res.end(JSON.stringify({ success: true, message: 'Pairing saved locally', storeId: body.storeId }));
         return;
       }
 
@@ -334,9 +341,7 @@ export function startLocalApiServer(port?: number): http.Server {
       if ((pathname === '/unpair' || pathname === '/api/v1/unpair') && method === 'POST') {
         const d = connectorStore.getData();
         const oldConnectorId = d.connectorId;
-        d.deviceToken = null;
-        delete d.storeId;
-        connectorStore.save();
+        connectorStore.clearPairing();
 
         const s = getSocket();
         if (s) {
@@ -372,8 +377,9 @@ export function startLocalApiServer(port?: number): http.Server {
     }
   });
 
-  server.listen(listenPort, () => {
-    logger.info(`Local API listening on http://127.0.0.1:${listenPort}`);
+  server.listen(listenPort, '0.0.0.0', () => {
+    logger.info(`[API listening] Local API HTTP server listening on http://127.0.0.1:${listenPort}`);
+    logger.info(`[Port bound] Port ${listenPort} successfully bound (0.0.0.0:${listenPort})`);
   });
 
   server.on('error', (err: NodeJS.ErrnoException) => {

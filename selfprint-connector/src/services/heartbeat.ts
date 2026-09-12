@@ -63,7 +63,10 @@ export async function sendHeartbeat(): Promise<void> {
     timestamp: new Date().toISOString()
   };
 
-  // 1. Emit via WebSocket
+  // 1. Log structured lifecycle: Heartbeat sent
+  logger.info(`[Heartbeat sent] Dispatched heartbeat (state: ${payload.state}, authenticated: ${authenticated}, socket: ${socketConnected}, printers: ${physicalPrinterCount})`);
+
+  // 2. Emit via WebSocket
   const wsSent = emitEvent('heartbeat', {
     ...payload,
     printers: physicalPrinters.map((p) => ({
@@ -77,7 +80,7 @@ export async function sendHeartbeat(): Promise<void> {
     timestamp: new Date().toISOString()
   });
 
-  // 2. Transmit via REST endpoint
+  // 3. Transmit via REST endpoint
   const url = `${data.connectorSettings.backendUrl.replace(/\/$/, '')}/api/v1/connectors/heartbeat`;
   try {
     const headers: Record<string, string> = {
@@ -99,15 +102,15 @@ export async function sendHeartbeat(): Promise<void> {
 
     if (response.ok) {
       connectorStore.updateLastHeartbeat();
-      logger.info('Heartbeat Sent (10s)');
+      logger.info(`[Heartbeat acknowledged] Backend confirmed heartbeat (HTTP ${response.status})`);
     } else if (response.status === 401) {
       logger.warn('Heartbeat rejected (401 Unauthorized): Device token was revoked or unpaired.');
-      connectorStore.setDeviceToken('');
+      connectorStore.clearPairing();
     }
   } catch (error) {
     if (wsSent) {
       connectorStore.updateLastHeartbeat();
-      logger.info('Heartbeat Sent (via WebSocket)');
+      logger.info('[Heartbeat acknowledged] Backend confirmed heartbeat via WebSocket');
     } else {
       logger.debug(`Heartbeat HTTP endpoint unreachable (retrying in 10s): ${error instanceof Error ? error.message : String(error)}`);
     }

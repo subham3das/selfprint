@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import http from 'http';
 import { spawn, ChildProcess } from 'child_process';
+import { autoUpdateService } from './updater';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -92,9 +93,9 @@ async function ensureHostService(): Promise<void> {
         }
       });
 
-      // Wait up to 5 seconds for port 4500 to bind
-      for (let i = 0; i < 10; i++) {
-        await new Promise((r) => setTimeout(r, 500));
+      // Wait up to 10 seconds for port 4500 to bind
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 250));
         if (await checkHostRunning()) {
           console.log('[Main] Host service daemon successfully started on port 4500.');
           break;
@@ -384,6 +385,10 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
+  if (mainWindow) {
+    autoUpdateService.init(mainWindow);
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -395,6 +400,7 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  autoUpdateService.stop();
   if (hostDaemonProcess) {
     try {
       hostDaemonProcess.kill();
@@ -493,4 +499,48 @@ ipcMain.on('open-config-folder', () => {
     console.error('Failed to open config folder:', err);
   }
 });
+
+// Direct config sync fallback (guarantees credentials are saved even if HTTP 4500 is delayed)
+ipcMain.handle('save-config', async (_event, data: { deviceToken?: string; storeId?: string }) => {
+  try {
+    const { config } = getProgramDataPaths();
+    const configPath = path.join(config, 'connector.json');
+    if (!fs.existsSync(config)) {
+      fs.mkdirSync(config, { recursive: true });
+    }
+    let current: any = {};
+    if (fs.existsSync(configPath)) {
+      try {
+        current = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      } catch {}
+    }
+    if (data.deviceToken) current.deviceToken = data.deviceToken;
+    if (data.storeId) current.storeId = data.storeId;
+    fs.writeFileSync(configPath, JSON.stringify(current, null, 2), 'utf8');
+    console.log('[Main] Saved connector config directly to disk:', configPath);
+    return true;
+  } catch (err) {
+    console.error('[Main] Failed to save config directly to disk:', err);
+    return false;
+  }
+});
+
+ipcMain.handle('clear-config', async () => {
+  try {
+    const { config } = getProgramDataPaths();
+    const configPath = path.join(config, 'connector.json');
+    if (fs.existsSync(configPath)) {
+      const current = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      current.deviceToken = null;
+      delete current.storeId;
+      fs.writeFileSync(configPath, JSON.stringify(current, null, 2), 'utf8');
+      console.log('[Main] Cleared connector pairing config directly on disk.');
+    }
+    return true;
+  } catch (err) {
+    console.error('[Main] Failed to clear config on disk:', err);
+    return false;
+  }
+});
+
 

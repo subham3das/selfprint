@@ -34,6 +34,18 @@
       {
         "from": "../node_modules",
         "to": "host-service/node_modules"
+      },
+      {
+        "from": "../installer",
+        "to": "host-service/installer"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "subham3das",
+        "repo": "selfprint",
+        "releaseType": "release"
       }
     ],
     "win": {
@@ -52,9 +64,10 @@
         }
       ],
       "icon": "public/logoapp.png",
-      "artifactName": "${productName}-Setup.${ext}"
+      "artifactName": "${productName} Setup.${ext}"
     },
     "nsis": {
+      "include": "../installer/installer.nsh",
       "oneClick": false,
       "perMachine": true,
       "allowToChangeInstallationDirectory": true,
@@ -66,7 +79,7 @@
       "deleteAppDataOnUninstall": false
     },
     "portable": {
-      "artifactName": "${productName}-Portable.${ext}"
+      "artifactName": "${productName} Portable.${ext}"
     }
   },
   "dependencies": {

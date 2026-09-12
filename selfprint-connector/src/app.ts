@@ -61,31 +61,34 @@ async function bootstrap(): Promise<void> {
   logger.info('==================================================');
 
   try {
-    // 2. Perform Crash Recovery from previous session
-    await crashRecovery.performRecovery();
+    // 2. Structured Lifecycle Log: Service started
+    logger.info(`[Service started] SelfPrint Hardware Bridge Service started (PID: ${process.pid})`);
 
-
-
-    // 4. Start Local Hardware Printer Detection & 30s Watcher
-    await syncService.start();
-
-    // 5. Start Minimal Local REST API (Port 4500)
+    // 3. Start Minimal Local REST API (Port 4500) immediately so /health is instantly alive
     startLocalApiServer();
 
-    // 6. Connect Secure WebSocket Bridge to SelfPrint Backend
+    // 4. Perform Crash Recovery from previous session
+    await crashRecovery.performRecovery();
+
+    // 5. Connect Secure WebSocket Bridge to SelfPrint Backend
     initSocket();
 
-    // 7. Start Device Heartbeat Beacon (Every 15s)
+    // 6. Start Device Heartbeat Beacon (Every 15s)
     startHeartbeat();
 
-    // 8. Start Health Telemetry Monitor (Every 60s)
+    // 7. Start Health Telemetry Monitor (Every 60s)
     healthMonitor.start();
 
-    // 9. Start Update Architecture Version Checker (Hourly)
+    // 8. Start Update Architecture Version Checker (Hourly)
     updateChecker.start();
 
-    // 10. Start Windows System Tray Companion
+    // 9. Start Windows System Tray Companion
     trayManager.start();
+
+    // 10. Start Local Hardware Printer Detection & Watcher asynchronously in background
+    syncService.start().catch((err) => {
+      logger.error('Error starting printer synchronization service:', err);
+    });
 
     // 11. Silent Background State
     logger.info('Hardware Bridge running silently in background. Awaiting print commands...');

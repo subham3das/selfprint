@@ -66,20 +66,35 @@ export function initSocket(): Socket {
     autoConnect: true
   });
 
+  let hasConnectedOnce = false;
+
   // Socket Lifecycle Listeners
   socket.on('connect', () => {
     isConnected = true;
+    const isReconnect = hasConnectedOnce;
+    hasConnectedOnce = true;
     reconnectAttempt = 0;
-    logger.info(`Connected to SelfPrint Backend (Socket ID: ${socket?.id})`);
 
     const curData = connectorStore.getData();
+    if (isReconnect) {
+      logger.info(`[Socket reconnected] Cloud WebSocket re-established (Socket ID: ${socket?.id})`);
+    } else {
+      logger.info(`Connected to SelfPrint Backend (Socket ID: ${socket?.id})`);
+    }
 
-    // 1. Emit connector_online
+    if (curData.deviceToken) {
+      logger.info(`[Authentication success] Device authenticated with backend (storeId: ${curData.storeId || 'unassigned'})`);
+    } else {
+      logger.info('[Authentication success] Unpaired connector registered with backend.');
+    }
+
+    // 1. Emit connector_online with full credentials
     socket?.emit('connector_online', {
       connectorId: curData.connectorId,
       machineId: curData.machineId,
       storeId: curData.storeId || undefined,
       deviceToken: curData.deviceToken || undefined,
+      token: curData.deviceToken || undefined,
       hostname: identity.hostname,
       windowsUser: identity.windowsUser,
       version: identity.connectorVersion,
@@ -111,26 +126,44 @@ export function initSocket(): Socket {
 
   socket.on('disconnect', (reason: string) => {
     isConnected = false;
-    logger.warn(`Disconnected from backend. Reason: ${reason}`);
+    logger.warn(`[Socket disconnected] Cloud WebSocket disconnected (reason: ${reason})`);
   });
 
   socket.on('connect_error', (error: Error) => {
     isConnected = false;
     reconnectAttempt++;
     const nextDelayMs = RECONNECT_INTERVALS_MS[Math.min(reconnectAttempt - 1, RECONNECT_INTERVALS_MS.length - 1)];
-    logger.debug(`Backend connection unavailable (${error.message}). Retrying in ${nextDelayMs / 1000}s...`);
+    logger.debug(`[Authentication failure] Backend connection unavailable (${error.message}). Retrying in ${nextDelayMs / 1000}s...`);
   });
 
-  socket.on('reconnect', (attempt: number) => {
+  // Socket.IO v4 Manager Reconnection Handlers
+  socket.io.on('reconnect_attempt', (attempt: number) => {
+    const curData = connectorStore.getData();
+    if (socket) {
+      socket.auth = {
+        connectorId: curData.connectorId,
+        machineId: curData.machineId,
+        storeId: curData.storeId || undefined,
+        deviceToken: curData.deviceToken || undefined,
+        token: curData.deviceToken || undefined,
+        hostname: identity.hostname,
+        windowsUser: identity.windowsUser,
+        version: identity.connectorVersion
+      };
+    }
+  });
+
+  socket.io.on('reconnect', (attempt: number) => {
     isConnected = true;
     reconnectAttempt = 0;
-    logger.info(`Reconnected to backend successfully after ${attempt} attempt(s).`);
+    logger.info(`[Socket reconnected] Cloud WebSocket re-established after ${attempt} attempt(s).`);
     const curData = connectorStore.getData();
     socket?.emit('connector_online', {
       connectorId: curData.connectorId,
       machineId: curData.machineId,
       storeId: curData.storeId || undefined,
       deviceToken: curData.deviceToken || undefined,
+      token: curData.deviceToken || undefined,
       hostname: identity.hostname,
       windowsUser: identity.windowsUser,
       version: identity.connectorVersion,

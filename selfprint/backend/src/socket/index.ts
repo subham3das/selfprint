@@ -24,6 +24,16 @@ class SocketManager {
     this.io.on('connection', (socket: Socket) => {
       logger.info(`🔌 Socket connected: ${socket.id}`);
 
+      const auth = socket.handshake.auth || {};
+      if (auth.connectorId) {
+        (socket as any).connectorId = auth.connectorId;
+        socket.join('connectors');
+      }
+      if (auth.storeId) {
+        (socket as any).storeId = auth.storeId;
+        socket.join(`store:${auth.storeId}`);
+      }
+
       // Admin Room Subscription
       socket.on('join_admin', () => {
         socket.join('admin');
@@ -85,16 +95,51 @@ class SocketManager {
 
       // Inbound: connector_online
       socket.on('connector_online', async (data: any) => {
-        (socket as any).connectorId = data.connectorId;
-        (socket as any).storeId = data.storeId || (socket as any).storeId;
+        const connectorId = data.connectorId;
+        const storeId = data.storeId || (socket as any).storeId;
+        (socket as any).connectorId = connectorId;
         socket.join('connectors');
-        if (data.storeId) socket.join(`store:${data.storeId}`);
+        if (storeId) {
+          (socket as any).storeId = storeId;
+          socket.join(`store:${storeId}`);
+        }
+
+        // Immediately update MongoDB ConnectorModel so web dashboard reflects ONLINE state
+        try {
+          const { ConnectorModel } = await import('../models/connector.model');
+          const mongoose = await import('mongoose');
+          const updateFields: any = {
+            status: 'ONLINE',
+            state: 'CONNECTED',
+            socketConnected: true,
+            hostRunning: true,
+            lastSeen: new Date(),
+            lastHeartbeat: new Date()
+          };
+          if (storeId && mongoose.Types.ObjectId.isValid(storeId)) {
+            updateFields.storeId = storeId;
+          }
+          if (data.hostname) {
+            updateFields.hostname = data.hostname;
+          }
+          if (data.version) {
+            updateFields.version = data.version;
+          }
+          await ConnectorModel.findOneAndUpdate(
+            { connectorId },
+            { $set: updateFields },
+            { new: true }
+          );
+          logger.info(`[Status updated in MongoDB] Connector ${connectorId} marked ONLINE via socket`);
+        } catch (dbErr) {
+          logger.warn('Failed to update ConnectorModel on connector_online:', dbErr);
+        }
 
         try {
           const { connectorRegistry } = await import('../modules/connector/connector.service');
           await connectorRegistry.registerConnector({
             connectorId: data.connectorId,
-            storeId: data.storeId || 'default',
+            storeId: storeId || 'default',
             hostname: data.hostname || 'Host Device',
             machineId: data.machineId || 'unknown',
             version: data.version || '1.0.0'
@@ -103,9 +148,10 @@ class SocketManager {
           logger.warn('Error in connector_online registration:', e);
         }
 
-        this.emitToStore(data.storeId || 'default', 'connector_connected', {
+        const targetStore = storeId || 'default';
+        this.emitToStore(targetStore, 'connector_connected', {
           connectorId: data.connectorId,
-          storeId: data.storeId || 'default',
+          storeId: targetStore,
           status: 'ONLINE',
           state: 'CONNECTED',
           timestamp: new Date().toISOString()
@@ -154,6 +200,7 @@ class SocketManager {
             { $set: updateObj },
             { new: true }
           );
+          logger.info(`[Status updated in MongoDB] Connector ${connectorId} heartbeat updated via socket (state: ${updateObj.state}, auth: ${updateObj.authenticated})`);
 
           const targetStoreId = storeId || updatedConnector?.storeId?.toString() || 'default';
           this.emitToStore(targetStoreId, 'heartbeat', {
