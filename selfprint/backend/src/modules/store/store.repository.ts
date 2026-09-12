@@ -52,11 +52,31 @@ export class StoreRepository {
   }
 
   /**
-   * Generate next sequential storeCode (e.g. SP-1001, SP-1002)
+   * Generate next sequential storeCode (e.g. SP-1001, SP-1002, SP-1003...)
+   * Queries highest numeric storeCode and guarantees uniqueness to prevent E11000 duplicate key errors
    */
   private async generateNextStoreCode(): Promise<string> {
-    const totalStores = await StoreModel.countDocuments();
-    return `SP-${(1001 + totalStores).toString()}`;
+    const latestStore = await StoreModel.findOne({ storeCode: /^SP-\d+$/ })
+      .sort({ storeCode: -1 })
+      .collation({ locale: 'en_US', numericOrdering: true })
+      .select('storeCode')
+      .lean()
+      .exec();
+
+    let nextNum = 1001;
+    if (latestStore && latestStore.storeCode) {
+      const match = latestStore.storeCode.match(/^SP-(\d+)$/);
+      if (match && match[1]) {
+        nextNum = parseInt(match[1], 10) + 1;
+      }
+    }
+
+    // Ensure collision resistance: if SP-${nextNum} exists for any reason, find the next available
+    while (await StoreModel.exists({ storeCode: `SP-${nextNum}` })) {
+      nextNum++;
+    }
+
+    return `SP-${nextNum}`;
   }
 
   /**

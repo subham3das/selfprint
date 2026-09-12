@@ -56,6 +56,18 @@ const STORE_FIELD_KEYS = [
   'confirmPassword'
 ];
 
+const BANK_FIELD_KEYS = [
+  'accountHolderName',
+  'bankName',
+  'accountNumber',
+  'confirmAccountNumber',
+  'ifscCode',
+  'branchName',
+  'upiId',
+  'chequeImage',
+  'passbookImage'
+];
+
 export const useStoreOnboarding = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('welcome');
@@ -251,13 +263,20 @@ export const useStoreOnboarding = () => {
         const hasStoreError = Object.keys(fieldErrors).some(
           (k) => STORE_FIELD_KEYS.includes(k) || k.startsWith('storeDetails')
         );
+        const hasBankError = Object.keys(fieldErrors).some(
+          (k) => BANK_FIELD_KEYS.includes(k) || k.startsWith('bankDetails')
+        );
 
         if (hasStoreError) {
           console.log('[Onboarding] currentStep change: review -> store_details (validation errors)');
           goToStep('store_details');
-        } else {
+        } else if (hasBankError) {
           console.log('[Onboarding] currentStep change: review -> bank_details (validation errors)');
           goToStep('bank_details');
+        } else {
+          // General / system error (e.g. storeCode duplicate or other root error) - stay on review and show message
+          const firstMsg = Object.values(fieldErrors)[0];
+          setErrorMessage(firstMsg || responseData?.message || 'Registration failed. Please check the entered information.');
         }
         return;
       }
