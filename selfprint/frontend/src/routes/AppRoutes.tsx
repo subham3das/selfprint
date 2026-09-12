@@ -1,5 +1,4 @@
-import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout';
 import { HomePage, NotFoundPage } from '@/pages';
 import {
@@ -57,6 +56,11 @@ export const AppRoutes: React.FC = () => {
         <Route path="/store/settings" element={<SettingsPage />} />
         <Route path="/store/printer-setup" element={<PrinterSetupPage />} />
       </Route>
+
+      {/* Convenience Top-Level Routes */}
+      <Route path="/dashboard" element={<Navigate to="/store/dashboard" replace />} />
+      <Route path="/user" element={<Navigate to="/upload" replace />} />
+      <Route path="/user/*" element={<Navigate to="/upload" replace />} />
 
       {/* Customer User Panel Routes (Direct QR Scan Flow - Zero Login) */}
       <Route path="/store/:storeId" element={<UserUploadPage />} />
