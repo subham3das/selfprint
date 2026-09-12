@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, Notification } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, Notification, safeStorage } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import http from 'http';
@@ -542,5 +542,81 @@ ipcMain.handle('clear-config', async () => {
     return false;
   }
 });
+
+// Secure On-Disk Auth Session Management (Windows DPAPI safeStorage)
+ipcMain.handle('auth:save', async (_event, authData: any) => {
+  try {
+    const { config } = getProgramDataPaths();
+    if (!fs.existsSync(config)) {
+      fs.mkdirSync(config, { recursive: true });
+    }
+    const authPath = path.join(config, 'auth.json');
+    const jsonStr = JSON.stringify(authData);
+
+    if (safeStorage && safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(jsonStr);
+      fs.writeFileSync(
+        authPath,
+        JSON.stringify({ encrypted: true, data: encrypted.toString('base64') }, null, 2),
+        'utf8'
+      );
+      console.log('[Main] Saved encrypted auth session to disk via Windows DPAPI.');
+    } else {
+      // Fallback for environments where safeStorage DPAPI is unavailable
+      fs.writeFileSync(
+        authPath,
+        JSON.stringify({ encrypted: false, data: Buffer.from(jsonStr, 'utf8').toString('base64') }, null, 2),
+        'utf8'
+      );
+      console.log('[Main] Saved auth session to disk (fallback storage).');
+    }
+    return true;
+  } catch (err) {
+    console.error('[Main] Failed to save secure auth to disk:', err);
+    return false;
+  }
+});
+
+ipcMain.handle('auth:get', async () => {
+  try {
+    const { config } = getProgramDataPaths();
+    const authPath = path.join(config, 'auth.json');
+    if (!fs.existsSync(authPath)) return null;
+
+    const raw = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    let jsonStr: string;
+    if (raw.encrypted && safeStorage && safeStorage.isEncryptionAvailable()) {
+      const buffer = Buffer.from(raw.data, 'base64');
+      jsonStr = safeStorage.decryptString(buffer);
+    } else {
+      jsonStr = Buffer.from(raw.data, 'base64').toString('utf8');
+    }
+    return JSON.parse(jsonStr);
+  } catch (err) {
+    console.error('[Main] Failed to restore secure auth session:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('auth:clear', async () => {
+  try {
+    const { config } = getProgramDataPaths();
+    const authPath = path.join(config, 'auth.json');
+    if (fs.existsSync(authPath)) {
+      fs.unlinkSync(authPath);
+      console.log('[Main] Cleared auth.json from disk.');
+    }
+    return true;
+  } catch (err) {
+    console.error('[Main] Failed to clear auth from disk:', err);
+    return false;
+  }
+});
+
+// Structured Lifecycle Event Logging across daemon/desktop
+ipcMain.on('log:event', (_event, { tag, message }: { tag: string; message: string }) => {
+  console.log(`[${tag}] ${message}`);
+});
+
 
 

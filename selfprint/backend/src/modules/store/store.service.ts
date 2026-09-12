@@ -3,7 +3,8 @@ import {
   StoreOnboardingDto,
   StoreRegistrationResultDto,
   StoreLoginDto,
-  StoreAuthResponseDto
+  StoreAuthResponseDto,
+  StoreSummaryDto
 } from './store.types';
 import { passwordUtils } from '../../utils/password';
 import { jwtUtils } from '../../utils/jwt';
@@ -153,6 +154,25 @@ export class StoreService {
       storeCode: store.storeCode
     });
 
+    // 5. Query all active stores owned by the user (matching email/phone)
+    const allStores = await this.repository.findAllByOwner(store.email, store.phone);
+    const storeSummaries: StoreSummaryDto[] = allStores.map((s) => ({
+      id: String(s._id),
+      storeCode: s.storeCode,
+      storeName: s.name,
+      ownerName: s.ownerName,
+      email: s.email,
+      phone: s.phone,
+      address: s.address,
+      city: s.city,
+      state: s.state,
+      pincode: s.pincode,
+      status: s.status,
+      isVerified: s.isVerified,
+      storeImage: s.storeImage,
+      logo: s.logo
+    }));
+
     return {
       token,
       store: {
@@ -172,8 +192,32 @@ export class StoreService {
         isVerified: store.isVerified,
         isFirstLogin: store.isFirstLogin ?? true,
         printerConfigured: store.printerConfigured ?? false
-      }
+      },
+      stores: storeSummaries
     };
+  }
+
+  /**
+   * Fetch all stores belonging to the authenticated owner
+   */
+  public async getMyStores(email?: string, phone?: string): Promise<StoreSummaryDto[]> {
+    const allStores = await this.repository.findAllByOwner(email, phone);
+    return allStores.map((s) => ({
+      id: String(s._id),
+      storeCode: s.storeCode,
+      storeName: s.name,
+      ownerName: s.ownerName,
+      email: s.email,
+      phone: s.phone,
+      address: s.address,
+      city: s.city,
+      state: s.state,
+      pincode: s.pincode,
+      status: s.status,
+      isVerified: s.isVerified,
+      storeImage: s.storeImage,
+      logo: s.logo
+    }));
   }
 
   /**

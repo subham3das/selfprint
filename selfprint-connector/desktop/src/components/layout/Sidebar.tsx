@@ -10,7 +10,10 @@ import {
   Moon,
   Radio,
   WifiOff,
-  Loader2
+  Loader2,
+  Store,
+  ArrowLeftRight,
+  LogOut
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { NavigationTab } from '../../types';
@@ -35,6 +38,11 @@ export const Sidebar: React.FC = () => {
     { id: 'about', label: 'About', icon: <Info className="w-4 h-4" /> }
   ];
 
+  const selectedStore = useAppStore((s) => s.selectedStore);
+  const authSession = useAppStore((s) => s.authSession);
+  const switchStore = useAppStore((s) => s.switchStore);
+  const logout = useAppStore((s) => s.logout);
+
   return (
     <aside className="w-56 bg-slate-900/90 border-r border-slate-800/80 flex flex-col justify-between p-3 select-none">
       {/* Brand Header & Navigation Links */}
@@ -44,11 +52,11 @@ export const Sidebar: React.FC = () => {
           <img
             src="/logoapp.png"
             alt="SelfPrint Logo"
-            className="w-8 h-8 object-contain rounded-lg shadow-md shadow-blue-500/20"
+            className="w-8 h-8 object-contain rounded-lg shadow-md shadow-emerald-500/20"
           />
           <div>
             <h2 className="text-xs font-bold text-slate-100 tracking-tight">SelfPrint</h2>
-            <p className="text-[10px] text-blue-400 font-medium">Connector v0.2.0</p>
+            <p className="text-[10px] text-emerald-400 font-medium">Connector v1.0.0</p>
           </div>
         </div>
 
@@ -64,12 +72,12 @@ export const Sidebar: React.FC = () => {
                 onClick={() => setActiveTab(item.id)}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
                   isActive
-                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 shadow-sm'
+                    ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 shadow-sm'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
                 }`}
               >
                 <div className="flex items-center gap-2.5">
-                  <span className={isActive ? 'text-blue-400' : 'text-slate-400'}>{item.icon}</span>
+                  <span className={isActive ? 'text-emerald-400' : 'text-slate-400'}>{item.icon}</span>
                   {item.label}
                 </div>
                 {item.badge !== undefined && item.badge > 0 && (
@@ -83,8 +91,53 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* Footer Controls */}
-      <div className="pt-3 border-t border-slate-800/80 space-y-2">
+      {/* Footer Controls & Account Section */}
+      <div className="pt-3 border-t border-slate-800/80 space-y-2.5">
+        {/* Active Store & Switch/Logout */}
+        {(selectedStore || authSession) && (
+          <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+                <Store className="w-3.5 h-3.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-bold text-slate-200 truncate">
+                  {selectedStore?.storeName || 'Active Store'}
+                </p>
+                <p className="text-[10px] text-slate-400 truncate">
+                  {selectedStore?.storeCode || authSession?.email || 'Store Session'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 pt-1 border-t border-slate-800/50">
+              <button
+                onClick={() => {
+                  if (window.confirm('Switching stores will unpair this connector from the current store. Proceed?')) {
+                    switchStore();
+                  }
+                }}
+                className="flex-1 py-1 px-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-emerald-300 text-[10px] font-semibold flex items-center justify-center space-x-1 transition-colors"
+                title="Unpair and select another store"
+              >
+                <ArrowLeftRight className="w-2.5 h-2.5" />
+                <span>Switch</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to sign out?')) {
+                    logout();
+                  }
+                }}
+                className="py-1 px-2 rounded-lg bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 text-[10px] font-semibold flex items-center justify-center transition-colors"
+                title="Sign out of account"
+              >
+                <LogOut className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="px-3 py-2 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between">
           <div className="flex items-center gap-2 text-[11px]">
             {isSocketReconnecting ? (

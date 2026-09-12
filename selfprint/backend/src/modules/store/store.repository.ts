@@ -52,6 +52,22 @@ export class StoreRepository {
   }
 
   /**
+   * Find all active stores belonging to an owner by email or phone
+   */
+  public async findAllByOwner(email?: string, phone?: string): Promise<IStore[]> {
+    const conditions: any[] = [];
+    if (email) conditions.push({ email: email.toLowerCase().trim() });
+    if (phone) conditions.push({ phone: phone.trim() });
+
+    if (conditions.length === 0) return [];
+
+    return StoreModel.find({
+      $or: conditions,
+      status: 'ACTIVE'
+    }).lean().exec() as unknown as IStore[];
+  }
+
+  /**
    * Generate next sequential storeCode (e.g. SP-1001, SP-1002, SP-1003...)
    * Queries highest numeric storeCode and guarantees uniqueness to prevent E11000 duplicate key errors
    */

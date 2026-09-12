@@ -35,6 +35,9 @@ export const queryClient = new QueryClient({
 
 import { UpdateBanner } from './components/updater/UpdateBanner';
 import { UpdateModal } from './components/updater/UpdateModal';
+import { LoginPage } from './pages/auth/LoginPage';
+import { StoreSelectionPage } from './pages/auth/StoreSelectionPage';
+import { PairingPage } from './pages/auth/PairingPage';
 
 export const AppContent: React.FC = () => {
   const activeTab = useAppStore((s) => s.activeTab);
@@ -42,6 +45,7 @@ export const AppContent: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
   const showToast = useAppStore((s) => s.showToast);
   const setUpdateStatus = useAppStore((s) => s.setUpdateStatus);
+  const authStage = useAppStore((s) => s.authStage);
 
   useEffect(() => {
     // Apply theme class
@@ -126,26 +130,41 @@ export const AppContent: React.FC = () => {
       {/* Realtime Update Progress Banner */}
       <UpdateBanner />
 
-      {/* Main App Layout */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar Navigation */}
-        <Sidebar />
+      {/* Stage Routing: Login / Store Selection / Pairing / Authenticated App */}
+      {authStage === 'LOGIN' || authStage === 'CHECKING_AUTH' ? (
+        <div className="flex-1 overflow-hidden">
+          <LoginPage />
+        </div>
+      ) : authStage === 'STORE_SELECTION' ? (
+        <div className="flex-1 overflow-hidden">
+          <StoreSelectionPage />
+        </div>
+      ) : authStage === 'PAIRING' ? (
+        <div className="flex-1 overflow-hidden">
+          <PairingPage />
+        </div>
+      ) : (
+        /* Authenticated Main App Layout */
+        <div className="flex-1 flex overflow-hidden">
+          {/* Sidebar Navigation */}
+          <Sidebar />
 
-        {/* Dynamic Page Content */}
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-950/60">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
-            >
-              {renderActivePage()}
-            </motion.div>
-          </AnimatePresence>
-        </main>
-      </div>
+          {/* Dynamic Page Content */}
+          <main className="flex-1 overflow-y-auto p-6 bg-slate-950/60">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+              >
+                {renderActivePage()}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
+      )}
 
       {/* Modal Dialog when Update is Downloaded */}
       <UpdateModal />

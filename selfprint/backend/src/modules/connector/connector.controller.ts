@@ -146,6 +146,32 @@ export class ConnectorController {
       const storeCode = store.storeCode || '';
       const ownerName = store.ownerName || 'Store Owner';
 
+      // Verify that code belongs to the authenticated / requested store
+      let targetStoreId = req.body.storeId;
+      if (!targetStoreId && req.headers.authorization?.startsWith('Bearer ')) {
+        try {
+          const token = req.headers.authorization.split(' ')[1];
+          const decoded: any = jwtUtils.verifyToken(token);
+          targetStoreId = decoded.storeId || decoded.sub || decoded.id;
+        } catch (tokenErr) {
+          logger.warn(`Failed to decode JWT token in pair request:`, tokenErr);
+        }
+      }
+
+      if (targetStoreId && codeRecord.storeId.toString() !== targetStoreId.toString()) {
+        logger.warn(
+          `🚫 Pairing Code Store Mismatch: Code ${cleanCode} belongs to Store ${codeRecord.storeId}, but authenticated user requested Store ${targetStoreId}`
+        );
+        res.status(403).json({
+          success: false,
+          error: 'Store Mismatch',
+          message: 'This pairing code belongs to a different store. Please use a code generated for your authenticated store.'
+        });
+        return;
+      }
+
+      logger.info(`[Pair Code Verified] Code ${cleanCode} verified for Store ${codeRecord.storeId} (${storeName})`);
+
       // Ownership Protection: connector already paired to another store cannot pair to a new store without unpairing
       const existingConnector = await ConnectorModel.findOne({ connectorId });
       if (
@@ -162,13 +188,20 @@ export class ConnectorController {
           success: false,
           code: 'ALREADY_OWNED',
           error: 'Ownership Conflict',
-          message: `This connector is already owned by ${ownerStoreName}. Unpair before connecting to another store.`
+          message: `This connector is already registered to another store (${ownerStoreName}). Unpair the connector before connecting to this store.`
         });
         return;
       }
 
       // Generate permanent cryptographic Device Token
       const deviceToken = `dt_${crypto.randomBytes(32).toString('hex')}`;
+
+      // Extract full registration metadata
+      const machineName = req.body.machineName || req.body.hostname || hostname || 'Host Device';
+      const operatingSystem = req.body.operatingSystem || req.body.os || os || 'Windows';
+      const connectorVersion = req.body.connectorVersion || req.body.version || version || '1.0.0';
+      const localIp = req.body.localIp || req.body.ipAddress || (req.socket.remoteAddress || '');
+      const publicIp = req.body.publicIp || (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || '';
 
       // Permanently link connector to store in MongoDB
       const connector = await ConnectorModel.findOneAndUpdate(
@@ -179,10 +212,15 @@ export class ConnectorController {
           storeName,
           merchantId: store._id,
           machineId,
-          hostname: hostname || 'Host Device',
+          hostname: machineName,
+          machineName,
           windowsUser: windowsUser || 'User',
-          os: os || 'Windows',
-          version: version || '1.0.0',
+          os: operatingSystem,
+          operatingSystem,
+          version: connectorVersion,
+          connectorVersion,
+          localIp,
+          publicIp,
           deviceToken,
           status: 'ONLINE',
           state: 'CONNECTED',
@@ -190,7 +228,8 @@ export class ConnectorController {
           lastSeen: new Date(),
           pairedAt: new Date(),
           hostRunning: true,
-          authenticated: true
+          authenticated: true,
+          paired: true
         },
         { upsert: true, new: true }
       );
@@ -230,6 +269,7 @@ export class ConnectorController {
         timestamp: new Date().toISOString()
       });
 
+      logger.info(`[Connector Registered] Connector ${connectorId} registered for Store ${codeRecord.storeId} (${storeName}) on machine ${machineName}`);
       logger.info(`[Connector paired] Connector ${connectorId} paired with store ${codeRecord.storeId} (${storeName})`);
       logger.info(`[Status updated in MongoDB] Connector ${connectorId} marked PAIRED in MongoDB`);
 
@@ -702,6 +742,7 @@ export class ConnectorController {
         timestamp: new Date().toISOString()
       });
 
+      logger.info(`[Unpaired] Connector ${connectorId} successfully unpaired from Store ${storeIdStr}`);
       logger.info(`🔌 Connector ${connectorId} successfully unpaired from Store ${storeIdStr}`);
 
       res.status(200).json({

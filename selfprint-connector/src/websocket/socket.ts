@@ -156,6 +156,7 @@ export function initSocket(): Socket {
   socket.io.on('reconnect', (attempt: number) => {
     isConnected = true;
     reconnectAttempt = 0;
+    logger.info(`[Reconnect] Cloud WebSocket re-established after ${attempt} attempt(s).`);
     logger.info(`[Socket reconnected] Cloud WebSocket re-established after ${attempt} attempt(s).`);
     const curData = connectorStore.getData();
     socket?.emit('connector_online', {

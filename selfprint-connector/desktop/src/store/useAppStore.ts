@@ -10,6 +10,8 @@ export interface ToastItem {
 
 import { ConnectionState } from '../types/connectionState';
 import { UpdateStatusPayload } from '../types/updater';
+import { StoreAccount, StoreAuthSession, AuthStage } from '../types/auth';
+import { storeAuthService, emitLifecycleLog } from '../services/storeAuth';
 export type { ConnectionState };
 export type RealtimeConnectionState = ConnectionState;
 
@@ -29,10 +31,22 @@ interface AppState {
   updateStatus: UpdateStatusPayload;
   isUpdateModalOpen: boolean;
 
+  // Authentication & Store Selection State
+  authStage: AuthStage;
+  authSession: StoreAuthSession | null;
+  userStores: StoreAccount[];
+  selectedStore: StoreAccount | null;
+
   // Actions
   setActiveTab: (tab: NavigationTab) => void;
   setTheme: (theme: 'dark' | 'light') => void;
   toggleTheme: () => void;
+  setAuthStage: (stage: AuthStage) => void;
+  setAuthSession: (session: StoreAuthSession | null) => void;
+  setUserStores: (stores: StoreAccount[]) => void;
+  setSelectedStore: (store: StoreAccount | null) => void;
+  logout: () => Promise<void>;
+  switchStore: () => Promise<void>;
   addNotification: (notif: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
@@ -91,6 +105,46 @@ export const useAppStore = create<AppState>((set, get) => ({
   isBackendConnected: false,
   connectionState: 'OFFLINE',
   isSocketReconnecting: false,
+
+  // Auth defaults
+  authStage: 'CHECKING_AUTH',
+  authSession: null,
+  userStores: [],
+  selectedStore: null,
+
+  setAuthStage: (stage) => set({ authStage: stage }),
+  setAuthSession: (session) => set({ authSession: session }),
+  setUserStores: (stores) => set({ userStores: stores }),
+  setSelectedStore: (store) => {
+    if (store) {
+      emitLifecycleLog('Store Selected', `Selected Store: ${store.storeName} (${store.storeCode || store.id})`);
+    }
+    set({ selectedStore: store });
+  },
+
+  logout: async () => {
+    await storeAuthService.clearAuthSession();
+    set({
+      authSession: null,
+      selectedStore: null,
+      authStage: 'LOGIN'
+    });
+    get().showToast('Logged Out', 'You have been signed out.', 'info');
+  },
+
+  switchStore: async () => {
+    const { selectedStore, userStores } = get();
+    const storeId = selectedStore?.id;
+    try {
+      await storeAuthService.unpairConnector({ storeId });
+    } catch {}
+
+    set({
+      selectedStore: null,
+      authStage: userStores.length > 1 ? 'STORE_SELECTION' : 'PAIRING'
+    });
+    get().showToast('Switched Store', 'Connector unpaired. Select another store to connect.', 'info');
+  },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 

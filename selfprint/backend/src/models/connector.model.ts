@@ -8,10 +8,16 @@ export interface IConnector extends Document {
   merchantId?: mongoose.Types.ObjectId;
   machineId: string;
   hostname: string;
+  machineName?: string;
   windowsUser?: string;
   os?: string;
+  operatingSystem?: string;
   version: string;
+  connectorVersion?: string;
   deviceToken: string;
+  localIp?: string;
+  publicIp?: string;
+  paired?: boolean;
   status: 'ONLINE' | 'OFFLINE';
   state: ConnectionState;
   lastHeartbeat: Date;
@@ -71,6 +77,10 @@ const connectorSchema = new Schema<IConnector>(
       required: [true, 'Hostname is required'],
       trim: true
     },
+    machineName: {
+      type: String,
+      trim: true
+    },
     windowsUser: {
       type: String,
       trim: true
@@ -79,7 +89,15 @@ const connectorSchema = new Schema<IConnector>(
       type: String,
       default: 'Windows'
     },
+    operatingSystem: {
+      type: String,
+      default: 'Windows'
+    },
     version: {
+      type: String,
+      default: '1.0.0'
+    },
+    connectorVersion: {
       type: String,
       default: '1.0.0'
     },
@@ -87,6 +105,18 @@ const connectorSchema = new Schema<IConnector>(
       type: String,
       required: [true, 'Device Token is required'],
       index: true
+    },
+    localIp: {
+      type: String,
+      trim: true
+    },
+    publicIp: {
+      type: String,
+      trim: true
+    },
+    paired: {
+      type: Boolean,
+      default: true
     },
     status: {
       type: String,

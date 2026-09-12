@@ -43,6 +43,9 @@ storeRouter.post(
 // Store Profile (Authenticated)
 storeRouter.get('/me', authenticate, storeController.getProfile);
 
+// Get All Stores Owned by Authenticated User (Authenticated)
+storeRouter.get('/my-stores', authenticate, storeController.getMyStores);
+
 // Update First Login Flag & Printer Configured State (Authenticated)
 storeRouter.patch('/first-login-completed', authenticate, storeController.completeFirstLogin);
 

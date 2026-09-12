@@ -19,6 +19,10 @@ export interface ElectronAPI {
   restartAndInstall: () => Promise<void>;
   getUpdateStatus: () => Promise<any>;
   onUpdateStatus: (callback: (status: any) => void) => () => void;
+  saveAuth: (data: any) => Promise<boolean>;
+  getAuth: () => Promise<any>;
+  clearAuth: () => Promise<boolean>;
+  logEvent: (tag: string, message: string) => void;
 }
 
 const api: ElectronAPI = {
@@ -49,7 +53,11 @@ const api: ElectronAPI = {
     return () => {
       ipcRenderer.removeListener('updater:status-changed', handler);
     };
-  }
+  },
+  saveAuth: (data: any) => ipcRenderer.invoke('auth:save', data),
+  getAuth: () => ipcRenderer.invoke('auth:get'),
+  clearAuth: () => ipcRenderer.invoke('auth:clear'),
+  logEvent: (tag: string, message: string) => ipcRenderer.send('log:event', { tag, message })
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

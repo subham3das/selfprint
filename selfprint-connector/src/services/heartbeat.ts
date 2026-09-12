@@ -64,7 +64,7 @@ export async function sendHeartbeat(): Promise<void> {
   };
 
   // 1. Log structured lifecycle: Heartbeat sent
-  logger.info(`[Heartbeat sent] Dispatched heartbeat (state: ${payload.state}, authenticated: ${authenticated}, socket: ${socketConnected}, printers: ${physicalPrinterCount})`);
+  logger.info(`[Heartbeat] Dispatched heartbeat (state: ${payload.state}, authenticated: ${authenticated}, socket: ${socketConnected}, printers: ${physicalPrinterCount})`);
 
   // 2. Emit via WebSocket
   const wsSent = emitEvent('heartbeat', {

@@ -47,6 +47,23 @@ export interface StoreLoginDto {
   password: string;
 }
 
+export interface StoreSummaryDto {
+  id: string;
+  storeCode: string;
+  storeName: string;
+  ownerName: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  status: string;
+  isVerified: boolean;
+  storeImage?: string;
+  logo?: string;
+}
+
 export interface StoreAuthResponseDto {
   token: string;
   store: {
@@ -67,4 +84,5 @@ export interface StoreAuthResponseDto {
     isFirstLogin: boolean;
     printerConfigured: boolean;
   };
+  stores?: StoreSummaryDto[];
 }

@@ -127,6 +127,28 @@ export class StoreController extends BaseController {
   };
 
   /**
+   * GET /api/v1/store/my-stores
+   * Fetches all stores owned by the authenticated account
+   */
+  public getMyStores = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const email = (req as any).user?.email || (req as any).store?.email;
+      const phone = (req as any).user?.phone || (req as any).store?.phone;
+      if (!email && !phone) {
+        throw new BadRequestError('User credentials missing from session');
+      }
+      const stores = await this.service.getMyStores(email, phone);
+      this.sendSuccess(res, 'User stores retrieved successfully.', stores, HTTP_STATUS.OK);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
    * PATCH /api/v1/store/first-login-completed
    */
   public completeFirstLogin = async (
