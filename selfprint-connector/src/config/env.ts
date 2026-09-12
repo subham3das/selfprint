@@ -17,7 +17,7 @@ export interface Environment {
 
 export const env: Environment = {
   PORT: parseInt(process.env.PORT || '4500', 10),
-  BACKEND_URL: process.env.BACKEND_URL || 'http://localhost:5000',
+  BACKEND_URL: process.env.BACKEND_URL || 'https://selfprint.onrender.com',
   DEVICE_ID: process.env.DEVICE_ID || '',
   DEVICE_TOKEN: process.env.DEVICE_TOKEN || '',
   STORE_ID: process.env.STORE_ID || '',

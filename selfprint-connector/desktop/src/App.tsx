@@ -13,6 +13,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { AboutPage } from './pages/AboutPage';
 import { initDesktopSocket } from './services/socket';
 import { localApi } from './services/api';
+import { BACKEND_URL } from './config/api';
 import { NavigationTab } from './types';
 
 /**
@@ -49,7 +50,7 @@ export const AppContent: React.FC = () => {
     }
 
     // Pass queryClient into socket so it can invalidate/clear caches on events
-    initDesktopSocket(queryClient);
+    initDesktopSocket(queryClient, BACKEND_URL);
 
     // ── Tray / IPC action handlers ────────────────────────────────────────
     if ((window as any).electronAPI) {

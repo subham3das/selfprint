@@ -46,6 +46,7 @@ apiRouter.use('/payments', paymentsRouter);
 
 // 9. Physical Hardware & Spooler Telemetry
 apiRouter.use('/connectors', connectorRouter);
+apiRouter.use('/connector', connectorRouter);
 apiRouter.use('/printer', printerModuleRouter);
 apiRouter.use('/connectors/printers', printerModuleRouter);
 

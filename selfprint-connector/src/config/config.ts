@@ -25,11 +25,11 @@ export interface JsonConfigFile {
 }
 
 const DEFAULT_JSON_CONFIG: JsonConfigFile = {
-  backendUrl: 'http://localhost:5000',
+  backendUrl: 'https://selfprint.onrender.com',
   deviceId: '',
   deviceToken: '',
   storeId: '',
-  connectorVersion: '0.1.0'
+  connectorVersion: '0.2.0'
 };
 
 class ConfigManager {

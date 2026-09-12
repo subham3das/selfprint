@@ -1,10 +1,11 @@
 import { HealthData, PrinterDevice, PrintJobRecord } from '../types';
+import { BACKEND_URL, LOCAL_BRIDGE_URL } from '../config/api';
 
 /**
  * LocalApiClient
  *
  * The ONLY source of printer and hardware data is the SelfPrint Host Service
- * running on http://127.0.0.1:4500.
+ * running on the local host bridge (port 4500).
  *
  * Rules:
  *  - Every method THROWS on failure. No silent catch, no mock data, no fallbacks.
@@ -12,7 +13,7 @@ import { HealthData, PrinterDevice, PrintJobRecord } from '../types';
  *  - Never use Electron printer APIs (webContents.getPrinters, navigator.print, window.print).
  */
 
-const BASE_URL = 'http://127.0.0.1:4500';
+const BASE_URL = LOCAL_BRIDGE_URL;
 const REQUEST_TIMEOUT_MS = 6000;
 
 class LocalApiClient {
@@ -144,8 +145,8 @@ class LocalApiClient {
     version: string;
     backendUrl?: string;
   }): Promise<{ success: boolean; data: { storeId: string; storeName: string; storeCode?: string; ownerName?: string; deviceToken: string } }> {
-    const backendUrl = payload.backendUrl || 'http://localhost:5000';
-    const res = await fetch(`${backendUrl}/api/v1/connectors/pair`, {
+    const backendUrl = (payload.backendUrl || BACKEND_URL).replace(/\/+$/, '');
+    let res = await fetch(`${backendUrl}/api/v1/connectors/pair`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -159,6 +160,22 @@ class LocalApiClient {
       })
     });
 
+    if (res.status === 404) {
+      res = await fetch(`${backendUrl}/api/v1/connector/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pairingCode: payload.pairingCode,
+          connectorId: payload.connectorId,
+          machineId: payload.machineId,
+          hostname: payload.hostname,
+          version: payload.version,
+          windowsUser: 'ASUS',
+          os: 'Windows'
+        })
+      });
+    }
+
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
       throw new Error(errData.message || errData.error || `Pairing failed (${res.status})`);
@@ -170,7 +187,7 @@ class LocalApiClient {
    * Verify device token against backend on desktop startup.
    * Throws network error if backend is down, returns valid: false if rejected.
    */
-  public async verifyToken(deviceToken: string, backendUrl = 'http://localhost:5000'): Promise<{
+  public async verifyToken(deviceToken: string, backendUrl = BACKEND_URL): Promise<{
     valid: boolean;
     data?: {
       connectorId: string;
@@ -181,7 +198,8 @@ class LocalApiClient {
       status?: string;
     };
   }> {
-    const res = await fetch(`${backendUrl}/api/v1/connectors/verify-token`, {
+    const cleanBackendUrl = backendUrl.replace(/\/+$/, '');
+    const res = await fetch(`${cleanBackendUrl}/api/v1/connectors/verify-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deviceToken })

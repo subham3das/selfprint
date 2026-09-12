@@ -64,7 +64,7 @@ class ConnectorStore {
       connectorVersion: this.identity.connectorVersion,
       lastHeartbeat: fileContent.lastHeartbeat || null,
       connectorSettings: {
-        backendUrl: env.BACKEND_URL || fileContent.connectorSettings?.backendUrl || 'http://localhost:5000',
+        backendUrl: env.BACKEND_URL || fileContent.connectorSettings?.backendUrl || 'https://selfprint.onrender.com',
         port: env.PORT || fileContent.connectorSettings?.port || 4500,
         scanIntervalMs: env.PRINTER_SCAN_INTERVAL_MS || fileContent.connectorSettings?.scanIntervalMs || 30000,
         heartbeatIntervalMs: env.HEARTBEAT_INTERVAL_MS || fileContent.connectorSettings?.heartbeatIntervalMs || 15000,

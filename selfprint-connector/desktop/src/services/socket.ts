@@ -1,6 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import { QueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store/useAppStore';
+import { BACKEND_URL } from '../config/api';
 
 let socket: Socket | null = null;
 
@@ -26,7 +27,7 @@ let socket: Socket | null = null;
  */
 export function initDesktopSocket(
   queryClient: QueryClient,
-  url = 'http://localhost:5000'
+  url = BACKEND_URL
 ): Socket {
   if (socket) return socket;
 

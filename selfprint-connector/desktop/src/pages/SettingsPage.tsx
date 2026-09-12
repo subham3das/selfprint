@@ -15,12 +15,13 @@ import {
 import { useAppStore } from '../store/useAppStore';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
+import { BACKEND_URL } from '../config/api';
 
 export const SettingsPage: React.FC = () => {
   const showToast = useAppStore((s) => s.showToast);
   const addActivity = useAppStore((s) => s.addActivity);
 
-  const [backendUrl, setBackendUrl] = useState('http://localhost:5000');
+  const [backendUrl, setBackendUrl] = useState(BACKEND_URL);
   const [heartbeatInterval, setHeartbeatInterval] = useState(15);
   const [scanInterval, setScanInterval] = useState(30);
   const [logLevel, setLogLevel] = useState('INFO');
@@ -97,7 +98,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleResetDefaults = () => {
-    setBackendUrl('http://localhost:5000');
+    setBackendUrl(BACKEND_URL);
     setHeartbeatInterval(15);
     setScanInterval(30);
     setLogLevel('INFO');
