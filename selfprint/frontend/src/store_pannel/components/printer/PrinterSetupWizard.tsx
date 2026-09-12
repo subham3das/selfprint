@@ -28,6 +28,7 @@ import { PrinterConfiguration } from './PrinterConfiguration';
 import { PrinterTestPage } from './PrinterTestPage';
 import { PrinterErrorView } from './PrinterErrorView';
 import { ManualPrinterSetup } from './ManualPrinterSetup';
+import { printerService } from '../../services/printer.service';
 
 interface PrinterSetupWizardProps {
   isOpen: boolean;
@@ -215,8 +216,8 @@ export const PrinterSetupWizard: React.FC<PrinterSetupWizardProps> = ({
                     </p>
                     <div className="flex items-center justify-between pt-1">
                       <a
-                        href="/downloads/selfprint-connector.exe"
-                        download
+                        href={printerService.getInstallerDownloadUrl()}
+                        download="SelfPrint-Connector-Setup.exe"
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-bold transition-all shadow-sm"
                       >
                         <Download className="w-3.5 h-3.5" />
