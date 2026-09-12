@@ -105,6 +105,9 @@ export const useStoreOnboarding = () => {
   }, [currentStep, countdown, navigate]);
 
   const goToStep = (step: OnboardingStep) => {
+    console.log("[STEP BEFORE]", currentStep);
+    console.log("[STEP AFTER]", step);
+    console.log("[WHO CHANGED STEP]", new Error().stack);
     console.log(`[Onboarding] currentStep change -> ${step}`);
     console.log(`[Onboarding] onboarding status: Active Step is now '${step}'`);
     setErrorMessage(null);
