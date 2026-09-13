@@ -1,3 +1,4 @@
+import { useRuntimeStore } from '../stores/useRuntimeStore';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
@@ -42,6 +43,7 @@ export const TransactionHistoryPage: React.FC = () => {
   const [activeNav, setActiveNav] = useState('history');
   const [isPaused, setIsPaused] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const runtime = useRuntimeStore();
 
   // Filter State
   const [filters, setFilters] = useState<TransactionFilters>({
@@ -118,8 +120,17 @@ export const TransactionHistoryPage: React.FC = () => {
   };
 
   // Real backend printer status
-  const isPrinterConfigured = dashboardData?.store?.printerConfigured ?? false;
   const rawPrinter = dashboardData?.printer;
+  const isPrinterVirtual = Boolean(
+    (rawPrinter as any)?.isVirtual ||
+    rawPrinter?.name?.toLowerCase().includes('virtual') ||
+    rawPrinter?.name?.toLowerCase().includes('print to pdf')
+  );
+  const isPrinterConfigured = Boolean(
+    runtime.testMode
+      ? isPrinterVirtual
+      : (dashboardData?.store?.printerConfigured && rawPrinter?.name && rawPrinter.name !== 'No printer configured' && !isPrinterVirtual)
+  );
   const isPrinterOnline =
     isPrinterConfigured &&
     Boolean(

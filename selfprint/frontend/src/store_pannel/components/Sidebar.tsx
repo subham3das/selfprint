@@ -67,9 +67,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     printerStatus?.model?.toLowerCase().includes('virtual')
   );
 
+  const hasValidPrinterName = Boolean(
+    printerStatus?.name &&
+    printerStatus.name !== 'No printer configured' &&
+    printerStatus.name !== 'No printer connected' &&
+    (printerStatus as any).status !== 'Not Configured' &&
+    (printerStatus as any).printerStatus !== 'Not Configured'
+  );
+
   const effectivePrinterConfigured =
-    (isPrinterConfigured || (printerStatus?.isConfigured ?? storeInfo.printerConfigured ?? false)) &&
-    (!isPrinterVirtual || isTestMode);
+    (isTestMode && isPrinterVirtual) ||
+    (Boolean(isPrinterConfigured || printerStatus?.isConfigured) && hasValidPrinterName && (!isPrinterVirtual || isTestMode));
 
   const handleNavClick = (item: (typeof navItems)[0]) => {
     onNavChange(item.id);

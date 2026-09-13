@@ -1,3 +1,4 @@
+import { useRuntimeStore } from '../stores/useRuntimeStore';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
@@ -35,6 +36,7 @@ export const QRGenerationPage: React.FC = () => {
   // Layout & Navigation State
   const [activeNav, setActiveNav] = useState('qr');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const runtime = useRuntimeStore();
   const [isPaused, setIsPaused] = useState(false);
 
   // Modals
@@ -185,8 +187,17 @@ export const QRGenerationPage: React.FC = () => {
   };
 
   // Real backend printer status
-  const isPrinterConfigured = dashboardData?.store?.printerConfigured ?? false;
   const rawPrinter = dashboardData?.printer;
+  const isPrinterVirtual = Boolean(
+    (rawPrinter as any)?.isVirtual ||
+    rawPrinter?.name?.toLowerCase().includes('virtual') ||
+    rawPrinter?.name?.toLowerCase().includes('print to pdf')
+  );
+  const isPrinterConfigured = Boolean(
+    runtime.testMode
+      ? isPrinterVirtual
+      : (dashboardData?.store?.printerConfigured && rawPrinter?.name && rawPrinter.name !== 'No printer configured' && !isPrinterVirtual)
+  );
   const isPrinterOnline =
     isPrinterConfigured &&
     Boolean(
