@@ -260,9 +260,16 @@ export const PrinterStatusMonitor: React.FC<PrinterStatusMonitorProps> = ({
                 <Printer className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-xs font-black text-slate-900 tracking-tight">
-                  Hardware Status
-                </h3>
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-xs font-black text-slate-900 tracking-tight">
+                    {Boolean((printer as any).isVirtual || printer.name?.toLowerCase().includes('virtual') || printer.name?.toLowerCase().includes('print to pdf')) ? 'Virtual Printer' : 'Hardware Status'}
+                  </h3>
+                  {Boolean((printer as any).isVirtual || printer.name?.toLowerCase().includes('virtual') || printer.name?.toLowerCase().includes('print to pdf')) && (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-purple-100 text-purple-700 border border-purple-200">
+                      🧪 Test Mode
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] text-slate-400 font-mono">
                   {port}
                 </p>

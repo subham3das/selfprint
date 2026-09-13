@@ -167,6 +167,7 @@ export class SettingsService {
     const full = await this.getFullSettings(storeIdParam);
 
     if (input.testMode !== undefined) {
+      await this.repository.updateStore(store._id, { testMode: Boolean(input.testMode) });
       logger.info(`[TestMode] Store ${store._id} testMode updated to ${input.testMode}`);
       socketManager.emitToStore(store._id.toString(), 'store:testModeChanged', {
         storeId: store._id.toString(),

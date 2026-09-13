@@ -336,3 +336,40 @@ export async function mapRawToPrinter(raw: RawPrinterData, testMode: boolean = f
     isTestMode: Boolean(isVirtual && testMode)
   };
 }
+
+/**
+ * Creates a synthetic SelfPrint Virtual Printer when Test Mode is active and no physical printer exists.
+ */
+export function createSelfPrintVirtualPrinter(): Printer {
+  return {
+    id: 'virtual_selfprint_pdf_printer',
+    name: 'SelfPrint Virtual Printer',
+    driverName: 'Microsoft Print to PDF',
+    portName: 'PORTPROMPT:',
+    location: 'Local Virtual Environment (Test Mode)',
+    comment: 'SelfPrint Emulated PDF Spooler',
+    manufacturer: 'SelfPrint',
+    model: 'Virtual PDF Printer',
+    isDefault: true,
+    isNetwork: false,
+    isShared: false,
+    shareName: '',
+    status: 'ONLINE',
+    isOnline: true,
+    jobsWaiting: 0,
+    colorSupport: true,
+    duplexSupport: true,
+    paperSizes: ['A4', 'A3', 'Letter', 'Legal'],
+    trayList: ['Virtual Tray 1'],
+    resolution: '600x600 DPI',
+    capabilities: ['COPIES', 'COLOR', 'TEST_PRINTER', 'VIRTUAL', 'PDF_GENERATOR'],
+    connectionType: 'VIRTUAL',
+    ipAddress: null,
+    mac: null,
+    serialNumber: 'VIRT-PRN-001',
+    lastSeen: new Date().toISOString(),
+    isVirtual: true,
+    isTestMode: true
+  };
+}
+

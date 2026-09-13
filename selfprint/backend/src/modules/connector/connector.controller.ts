@@ -396,8 +396,7 @@ export class ConnectorController {
       const liveStatus = isOnline ? 'ONLINE' : 'OFFLINE';
       const liveState = isOnline ? 'CONNECTED' : 'DISCONNECTED';
 
-      res.status(200).json({
-        success: true,
+      const statusData = {
         paired: true,
         connectorId: connector.connectorId,
         storeId: connector.storeId,
@@ -416,6 +415,12 @@ export class ConnectorController {
         physicalPrinters: connector.physicalPrinters || [],
         localIp: connector.localIp,
         publicIp: connector.publicIp
+      };
+
+      res.status(200).json({
+        success: true,
+        ...statusData,
+        data: statusData
       });
     } catch (err: any) {
       logger.error('Error retrieving connector status:', err);

@@ -154,29 +154,32 @@ export class PrintJobExecutor {
       if (isVirtualPrinter) {
         // =========================================================================
         // TEST MODE / VIRTUAL PRINTER PIPELINE
-        // Automatically saves PDF to Documents\SelfPrint\Test Prints\Order-XXX.pdf
+        // Automatically saves PDF to Documents\SelfPrint\TestPrints\receipt-<jobId>.pdf
         // =========================================================================
+        logger.info('[VirtualPrinter] Print Started');
+
         const documentsPath = process.env.USERPROFILE
           ? path.join(process.env.USERPROFILE, 'Documents')
           : (process.platform === 'win32'
             ? path.join(process.env.HOMEDRIVE || 'C:', process.env.HOMEPATH || '', 'Documents')
             : path.join(os.homedir(), 'Documents'));
         
-        const testPrintsDir = path.join(documentsPath, 'SelfPrint', 'Test Prints');
+        const testPrintsDir = path.join(documentsPath, 'SelfPrint', 'TestPrints');
         if (!fs.existsSync(testPrintsDir)) {
           fs.mkdirSync(testPrintsDir, { recursive: true });
         }
 
         const rawJobId = (options.jobId || '1000').replace(/[^a-zA-Z0-9_-]/g, '');
-        const orderName = rawJobId.toLowerCase().startsWith('order-') ? rawJobId : `Order-${rawJobId}`;
-        const outputFilePath = path.join(testPrintsDir, `${orderName}.pdf`);
+        const outputFilename = `receipt-${rawJobId}.pdf`;
+        const outputFilePath = path.join(testPrintsDir, outputFilename);
 
         // Copy downloaded PDF to destination
         fs.copyFileSync(downloadResult.filePath, outputFilePath);
 
         logger.info(`[TestMode] PDF generated: ${outputFilePath}`);
+        logger.info(`[VirtualPrinter] PDF Generated: ${outputFilePath}`);
 
-        // Stream page progression
+        // Stream page progression (Strict 4-stage lifecycle: Pending -> Accepted -> Printing -> Completed)
         for (let p = 1; p <= totalPages; p++) {
           if (isCancelled) {
             throw new Error('Print job cancelled by operator.');
@@ -189,6 +192,7 @@ export class PrintJobExecutor {
         const durationMs = Date.now() - startTime;
         printLogger.printFinished(options.jobId, printer.name, durationMs);
         logger.info(`[TestMode] Job completed: ${options.jobId}`);
+        logger.info(`[VirtualPrinter] Job Completed: ${options.jobId}`);
 
         // 7. Status: COMPLETED
         this.emitStatus(options, 'COMPLETED', printer.name, { totalPages, currentPage: totalPages }, onStatusUpdate);

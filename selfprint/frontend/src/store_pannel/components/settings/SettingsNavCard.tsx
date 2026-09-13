@@ -9,7 +9,8 @@ import {
   Sliders,
   HardDrive,
   Info,
-  Laptop
+  Laptop,
+  Terminal
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -17,6 +18,7 @@ export type SettingsCategoryId =
   | 'store'
   | 'connector'
   | 'printer'
+  | 'developer'
   | 'pricing'
   | 'payment'
   | 'receipt'
@@ -52,6 +54,12 @@ export const SettingsNavCard: React.FC<SettingsNavCardProps> = ({
       title: 'Printer Settings',
       desc: 'Configure printer & preferences',
       icon: Printer
+    },
+    {
+      id: 'developer' as SettingsCategoryId,
+      title: 'Developer',
+      desc: 'Test Mode & Virtual Printer',
+      icon: Terminal
     },
     {
       id: 'pricing' as SettingsCategoryId,

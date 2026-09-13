@@ -10,6 +10,7 @@ import { StoreInfoCard } from '../components/settings/StoreInfoCard';
 import { StoreBrandingCard } from '../components/settings/StoreBrandingCard';
 import { PrinterConfigCard } from '../components/settings/PrinterConfigCard';
 import { PrinterConnectorSettingsCard } from '../components/settings/PrinterConnectorSettingsCard';
+import { DeveloperSettingsCard } from '../components/settings/DeveloperSettingsCard';
 import { PricingConfigCard } from '../components/settings/PricingConfigCard';
 import { PaymentSettingsCard } from '../components/settings/PaymentSettingsCard';
 import { PreferencesCard } from '../components/settings/PreferencesCard';
@@ -252,6 +253,11 @@ export const SettingsPage: React.FC = () => {
               /* Dedicated Printer Connector View */
               <div className="lg:col-span-8 space-y-6">
                 <PrinterConnectorSettingsCard />
+              </div>
+            ) : activeCategory === 'developer' ? (
+              /* Dedicated Developer & Test Mode View */
+              <div className="lg:col-span-8 space-y-6">
+                <DeveloperSettingsCard printer={settings.printer} onSave={handleSavePrinter} />
               </div>
             ) : (
               <>

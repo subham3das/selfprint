@@ -21,6 +21,7 @@ export interface IStore {
   isVerified: boolean;
   isFirstLogin: boolean;
   printerConfigured: boolean;
+  testMode?: boolean;
   verifiedAt?: Date;
   blocked: boolean;
   blockedAt?: Date;
@@ -126,6 +127,10 @@ const storeSchema = new Schema<IStore>(
       default: true
     },
     printerConfigured: {
+      type: Boolean,
+      default: false
+    },
+    testMode: {
       type: Boolean,
       default: false
     },

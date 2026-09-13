@@ -1,7 +1,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { IPrinterDetector, Printer } from './types';
-import { mapRawToPrinter, RawPrinterData } from './printerMapper';
+import { mapRawToPrinter, createSelfPrintVirtualPrinter, RawPrinterData } from './printerMapper';
 import { connectorStore } from '../storage/connectorStore';
 import { logger } from '../utils/logger';
 
@@ -44,6 +44,14 @@ export class WindowsPrinterDetector implements IPrinterDetector {
             logger.info(`[TestMode] Virtual printer detected: ${printer.name}`);
           }
         }
+      }
+
+      // If Test Mode is ON and no physical or OS printer exists, auto-inject SelfPrint Virtual Printer
+      if (isTestMode && printerMap.size === 0) {
+        const virtualPrinter = createSelfPrintVirtualPrinter();
+        printerMap.set(virtualPrinter.id, virtualPrinter);
+        logger.info('[VirtualPrinter] Created');
+        logger.info(`[TestMode] Virtual printer detected: ${virtualPrinter.name}`);
       }
 
       const printers = Array.from(printerMap.values());

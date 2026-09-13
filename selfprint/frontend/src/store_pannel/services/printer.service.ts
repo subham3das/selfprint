@@ -52,8 +52,8 @@ export const printerService = {
 
     try {
       const res = await apiClient.get(url, { params });
-      if (res.data?.success && res.data?.data) {
-        const d = res.data.data;
+      if (res.data?.success && (res.data?.data || res.data)) {
+        const d = res.data.data || res.data;
         const rawPhysical = Array.isArray(d.physicalPrinters) ? d.physicalPrinters : [];
         const count = typeof d.physicalPrinterCount === 'number'
           ? d.physicalPrinterCount
