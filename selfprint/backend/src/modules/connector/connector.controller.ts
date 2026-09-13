@@ -398,6 +398,7 @@ export class ConnectorController {
 
       const statusData = {
         paired: true,
+        testMode: Boolean(store.testMode),
         connectorId: connector.connectorId,
         storeId: connector.storeId,
         storeName: connector.storeName,

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Check, AlertTriangle, Terminal, Shield, Laptop, RefreshCw } from 'lucide-react';
 import { PrinterSettingsConfig } from '../../types/settings.types';
 import { useStoreSession } from '../../hooks/useStoreSession';
-import { getSocket, joinStoreRoom } from '@/lib/socket';
+import { useConnectorStore } from '../../stores/useConnectorStore';
 
 interface DeveloperSettingsCardProps {
   printer: PrinterSettingsConfig;
@@ -14,58 +14,24 @@ export const DeveloperSettingsCard: React.FC<DeveloperSettingsCardProps> = ({
   onSave
 }) => {
   const storeInfo = useStoreSession();
-  const storeId = storeInfo?.id;
+  const { testMode, setTestMode } = useConnectorStore();
 
-  const [testMode, setTestMode] = useState<boolean>(Boolean(printer?.testMode));
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-  // Sync state whenever backend printer settings are fetched or updated
-  useEffect(() => {
-    if (printer?.testMode !== undefined) {
-      setTestMode(Boolean(printer.testMode));
-    }
-  }, [printer?.testMode]);
-
-  // Real-time synchronization across multi-tabs via WebSocket
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-
-    if (storeId) {
-      joinStoreRoom(storeId);
-    }
-
-    const handleTestMode = (data: { testMode?: boolean; enabled?: boolean }) => {
-      const nextVal = Boolean(data?.testMode ?? data?.enabled);
-      setTestMode(nextVal);
-    };
-
-    socket.on('store:testModeChanged', handleTestMode);
-    socket.on('test_mode_changed', handleTestMode);
-    socket.on('store_test_mode', handleTestMode);
-
-    return () => {
-      socket.off('store:testModeChanged', handleTestMode);
-      socket.off('test_mode_changed', handleTestMode);
-      socket.off('store_test_mode', handleTestMode);
-    };
-  }, [storeId]);
-
   const handleToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextVal = e.target.checked;
     if (nextVal) {
-      // Show confirmation when turning Test Mode ON
       setShowConfirmModal(true);
     } else {
-      // Instantly disable and persist
       await applyTestMode(false);
     }
   };
 
   const applyTestMode = async (enabled: boolean) => {
     setIsSaving(true);
+    // Optimistically update runtime single source of truth
     setTestMode(enabled);
     try {
       await onSave({
@@ -76,7 +42,6 @@ export const DeveloperSettingsCard: React.FC<DeveloperSettingsCardProps> = ({
       setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save test mode setting:', err);
-      // Revert state on error
       setTestMode(!enabled);
     } finally {
       setIsSaving(false);
@@ -153,7 +118,7 @@ export const DeveloperSettingsCard: React.FC<DeveloperSettingsCardProps> = ({
               <span>Virtual Output Directory</span>
             </div>
             <p className="text-purple-800 font-mono text-[11px] bg-white/80 p-2 rounded-lg border border-purple-200 select-all">
-              Documents \ SelfPrint \ TestPrints \ receipt-&lt;jobId&gt;.pdf
+              Documents  SelfPrint  TestPrints  receipt-&lt;jobId&gt;.pdf
             </p>
             <p className="text-[11px] text-purple-700">
               Jobs stream states: <code>Pending</code> ➔ <code>Accepted</code> ➔ <code>Printing</code> ➔ <code>Completed</code>.
@@ -186,7 +151,7 @@ export const DeveloperSettingsCard: React.FC<DeveloperSettingsCardProps> = ({
                 You are switching this store into <strong>Test Mode</strong>. The connector will expose a virtual printer and save output files to:
               </p>
               <div className="mt-2.5 p-2.5 bg-slate-100 rounded-xl text-[11px] font-mono text-slate-800 font-bold break-all">
-                Documents \ SelfPrint \ TestPrints \ receipt-&lt;jobId&gt;.pdf
+                Documents  SelfPrint  TestPrints  receipt-&lt;jobId&gt;.pdf
               </div>
               <p className="text-xs text-amber-800 font-semibold mt-2.5">
                 ⚠️ Generated files are saved locally. Disable Test Mode before going live. Continue?

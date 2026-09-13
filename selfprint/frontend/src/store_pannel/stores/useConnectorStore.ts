@@ -16,6 +16,7 @@ export type ConnectorWizardState =
 
 export interface ConnectorStoreData {
   // Core Connector Telemetry State
+  testMode: boolean;
   paired: boolean;
   isOnline: boolean;
   status: 'ONLINE' | 'OFFLINE' | 'UNKNOWN';
@@ -49,6 +50,7 @@ export interface ConnectorStoreData {
 const HEARTBEAT_TIMEOUT_MS = 30_000; // 30 seconds watchdog
 
 let state: ConnectorStoreData = {
+  testMode: false,
   paired: false,
   isOnline: false,
   status: 'UNKNOWN',
@@ -139,6 +141,7 @@ export const connectorStoreActions = {
       }
 
       updateState({
+        testMode: Boolean((res as any)?.testMode ?? (res as any)?.data?.testMode ?? state.testMode),
         paired: res.paired,
         isOnline: isReallyOnline,
         status: isReallyOnline ? 'ONLINE' : (res.paired ? 'OFFLINE' : 'UNKNOWN'),
@@ -213,6 +216,10 @@ export const connectorStoreActions = {
       console.error('[useConnectorStore] Unpair failed:', err);
       return false;
     }
+  },
+
+  setTestMode: (enabled: boolean) => {
+    updateState({ testMode: enabled });
   },
 
   setPairingCode: (code: string | null, seconds = 600) => {
@@ -445,6 +452,15 @@ export function initConnectorSocketListener() {
     const socket = getSocket();
     if (!socket) return;
 
+    socket.on('store:testModeChanged', (d: any) => {
+      const isEnabled = Boolean(d?.testMode ?? d?.enabled);
+      console.log('[useConnectorStore] store:testModeChanged received:', isEnabled);
+      updateState({ testMode: isEnabled });
+    });
+    socket.on('test_mode_changed', (d: any) => {
+      const isEnabled = Boolean(d?.testMode ?? d?.enabled);
+      updateState({ testMode: isEnabled });
+    });
     socket.on('connector:heartbeat', (d: any) => connectorStoreActions.handleSocketHeartbeat(d));
     socket.on('heartbeat', (d: any) => connectorStoreActions.handleSocketHeartbeat(d));
     socket.on('connector:connected', (d: any) => connectorStoreActions.handleSocketConnected(d));
