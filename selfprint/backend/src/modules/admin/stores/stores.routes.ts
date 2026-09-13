@@ -104,5 +104,60 @@ adminStoresRouter.delete(
   adminStoresController.deleteStore
 );
 
+
+/**
+ * @route   GET /api/v1/admin/stores/:id/bank-details
+ * @desc    Get store bank & payout details (masked by default, ?reveal=true with audit log)
+ */
+adminStoresRouter.get(
+  "/:id/bank-details",
+  authenticate,
+  authorize("stores", "view"),
+  adminStoresController.getStoreBankDetails
+);
+
+/**
+ * @route   POST /api/v1/admin/stores/:id/bank-details/log-access
+ * @desc    Log sensitive bank action (Copy, Statement Download, etc.)
+ */
+adminStoresRouter.post(
+  "/:id/bank-details/log-access",
+  authenticate,
+  authorize("stores", "view"),
+  adminStoresController.logBankDetailsAccess
+);
+
+/**
+ * @route   GET /api/v1/admin/stores/:id/settlement-summary
+ * @desc    Live settlement calculations (Total Revenue, Commission, Pending Settlement, Settled Amount)
+ */
+adminStoresRouter.get(
+  "/:id/settlement-summary",
+  authenticate,
+  authorize("stores", "view"),
+  adminStoresController.getSettlementSummary
+);
+
+/**
+ * @route   GET /api/v1/admin/stores/:id/settlements
+ * @desc    Get store historical settlement payout records
+ */
+adminStoresRouter.get(
+  "/:id/settlements",
+  authenticate,
+  authorize("stores", "view"),
+  adminStoresController.getStoreSettlements
+);
+
+/**
+ * @route   POST /api/v1/admin/stores/:id/settlements
+ * @desc    Record new payout settlement, reducing pending settlement and generating audit trail
+ */
+adminStoresRouter.post(
+  "/:id/settlements",
+  authenticate,
+  authorize("stores", "edit"),
+  adminStoresController.createSettlement
+);
 export default adminStoresRouter;
 export { adminStoresRouter };

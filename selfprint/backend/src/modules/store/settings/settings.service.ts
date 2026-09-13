@@ -134,15 +134,23 @@ export class SettingsService {
     return this.getFullSettings(storeIdParam);
   }
 
-  public async updatePaymentSettings(storeIdParam: string | undefined, input: any): Promise<StoreFullSettingsDto | null> {
+  public async updatePaymentSettings(storeIdParam: string | undefined, input: any, meta?: { ipAddress?: string; userAgent?: string; updatedBy?: string }): Promise<StoreFullSettingsDto | null> {
     const store = await this.repository.getStore(storeIdParam);
     if (!store) return null;
 
-    if (input.upiId || input.merchantName) {
-      await this.repository.updateStoreBankAccount(store._id, {
-        upiId: input.upiId,
-        accountHolderName: input.merchantName
-      });
+    if (input.upiId || input.merchantName || input.accountNumber || input.ifscCode || input.bankName) {
+      await this.repository.updateStoreBankAccount(
+        store._id,
+        {
+          upiId: input.upiId,
+          accountHolderName: input.merchantName || input.accountHolderName,
+          accountNumber: input.accountNumber,
+          ifscCode: input.ifscCode,
+          bankName: input.bankName,
+          settlementMethod: input.settlementMethod
+        },
+        meta
+      );
     }
 
     return this.getFullSettings(storeIdParam);

@@ -83,7 +83,12 @@ export class SettingsController extends BaseController {
     try {
       const storeId = this.getStoreId(req);
       const validated = updatePaymentSettingsSchema.parse(req.body);
-      const settings = await this.service.updatePaymentSettings(storeId, validated);
+      const meta = {
+        ipAddress: (req.headers['x-forwarded-for'] as string) || req.ip || req.socket.remoteAddress || '127.0.0.1',
+        userAgent: req.headers['user-agent'] || 'Web App',
+        updatedBy: ((req as AuthenticatedRequest).user as any)?.name || (req as AuthenticatedRequest).user?.email || 'Store Owner'
+      };
+      const settings = await this.service.updatePaymentSettings(storeId, validated, meta);
       this.sendSuccess(res, 'Payment settings updated', { settings });
     } catch (error) {
       next(error);

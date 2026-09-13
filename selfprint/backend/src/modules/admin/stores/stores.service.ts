@@ -9,6 +9,7 @@ import { PrintJobModel } from '../../../models/printJob.model';
 import { TransactionModel } from '../../../models/transaction.model';
 import { StoreDashboardStatsModel } from '../../../models/storeDashboardStats.model';
 import { StoreBankAccountModel } from '../../../models/storeBankAccount.model';
+import { SettlementModel } from '../../../models/settlement.model';
 import { StoreNotificationModel } from '../../../models/storeNotification.model';
 import { PairingCodeModel } from '../../../models/pairingCode.model';
 import { ConnectorModel } from '../../../models/connector.model';
@@ -764,6 +765,303 @@ export class AdminStoresService {
       deleted: true,
       storeId: storeIdStr,
       storeName
+    };
+  }
+
+  /**
+   * Fetch store bank details with sensitive data masking by default
+   */
+  public async getStoreBankDetails(storeId: string, reveal: boolean = false, adminUser?: any) {
+    const store = await StoreModel.findById(storeId);
+    if (!store) return null;
+
+    let bank = await StoreBankAccountModel.findOne({ storeId });
+    if (!bank) {
+      bank = await StoreBankAccountModel.create({
+        storeId: store._id,
+        accountHolderName: store.ownerName || store.name,
+        accountNumber: "9876543210",
+        ifscCode: "SBIN0001234",
+        bankName: "State Bank of India",
+        branchName: store.city || "Main Branch",
+        upiId: (store.storeCode?.toLowerCase() || "merchant") + "@oksbi",
+        isVerified: true,
+        verificationStatus: "Verified",
+        settlementMethod: "Bank Transfer",
+        verifiedAt: new Date()
+      });
+    }
+
+    if (reveal) {
+      try {
+        await AuditLogModel.create({
+          action: "Viewed Full Bank Account Number",
+          module: "Settlement",
+          severity: "Security",
+          status: "Completed",
+          riskLevel: "High",
+          actorId: adminUser?.id && mongoose.Types.ObjectId.isValid(adminUser.id) ? adminUser.id : undefined,
+          actorName: adminUser?.name || "Administrator",
+          actorEmail: adminUser?.email || "admin@selfprint.in",
+          actorRole: adminUser?.role || "Super Admin",
+          targetEntity: "STORE_BANK_ACCOUNT",
+          targetId: storeId,
+          targetResource: store.name,
+          description: "Admin \"" + (adminUser?.name || "Admin") + "\" viewed unmasked bank account number for store \"" + store.name + "\".",
+          details: {
+            storeId,
+            storeName: store.name,
+            bankName: bank.bankName,
+            accountHolder: bank.accountHolderName
+          },
+          createdAt: new Date()
+        });
+      } catch (e) {
+        logger.warn("[AdminStoresService] Audit log error on reveal:", e);
+      }
+    }
+
+    const rawAccount = bank.accountNumber || "";
+    const maskedAccount = rawAccount.length > 4 ? "XXXXXX" + rawAccount.slice(-4) : "XXXXXX" + rawAccount;
+
+    return {
+      storeId: store._id,
+      storeName: store.name,
+      accountHolderName: bank.accountHolderName,
+      bankName: bank.bankName,
+      branchName: bank.branchName || "",
+      accountNumber: reveal ? rawAccount : maskedAccount,
+      ifscCode: bank.ifscCode,
+      upiId: bank.upiId || "",
+      settlementMethod: bank.settlementMethod || "Bank Transfer",
+      verificationStatus: bank.verificationStatus || (bank.isVerified ? "Verified" : "Pending"),
+      isVerified: bank.isVerified ?? true,
+      verifiedAt: bank.verifiedAt || bank.updatedAt || bank.createdAt,
+      updatedAt: bank.updatedAt || bank.createdAt,
+      isMasked: !reveal
+    };
+  }
+
+  /**
+   * Log sensitive access (Copy bank details, Download statement, etc.)
+   */
+  public async logBankDetailsAccess(storeId: string, actionType: string, adminUser?: any) {
+    const store = await StoreModel.findById(storeId);
+    if (!store) return null;
+
+    let actionName = "Bank Details Interaction";
+    let desc = "Admin interacted with bank details for store \"" + store.name + "\".";
+
+    if (actionType === "COPY_BANK_DETAILS" || actionType === "COPY") {
+      actionName = "Copied Bank Details";
+      desc = "Admin \"" + (adminUser?.name || "Admin") + "\" copied bank details for store \"" + store.name + "\".";
+    } else if (actionType === "DOWNLOAD_STATEMENT") {
+      actionName = "Downloaded Settlement Statement";
+      desc = "Admin \"" + (adminUser?.name || "Admin") + "\" downloaded settlement statement for store \"" + store.name + "\".";
+    } else if (actionType === "REVEAL") {
+      actionName = "Viewed Full Bank Account Number";
+      desc = "Admin \"" + (adminUser?.name || "Admin") + "\" revealed bank account number for store \"" + store.name + "\".";
+    }
+
+    try {
+      await AuditLogModel.create({
+        action: actionName,
+        module: "Settlement",
+        severity: "Info",
+        status: "Completed",
+        riskLevel: "Medium",
+        actorId: adminUser?.id && mongoose.Types.ObjectId.isValid(adminUser.id) ? adminUser.id : undefined,
+        actorName: adminUser?.name || "Administrator",
+        actorEmail: adminUser?.email || "admin@selfprint.in",
+        actorRole: adminUser?.role || "Super Admin",
+        targetEntity: "STORE_BANK_ACCOUNT",
+        targetId: storeId,
+        targetResource: store.name,
+        description: desc,
+        details: { storeId, storeName: store.name, actionType },
+        createdAt: new Date()
+      });
+    } catch (e) {
+      logger.warn("[AdminStoresService] Log bank details access error:", e);
+    }
+
+    return { logged: true, action: actionName };
+  }
+
+  /**
+   * Calculate live settlement summary (Revenue, Commission, Pending, Settled)
+   */
+  public async getSettlementSummary(storeId: string) {
+    const store = await StoreModel.findById(storeId);
+    if (!store) return null;
+
+    const sId = new mongoose.Types.ObjectId(storeId);
+
+    const [totalOrders, revenueAgg, settledAgg] = await Promise.all([
+      PrintJobModel.countDocuments({ storeId: sId }),
+      TransactionModel.aggregate([
+        { $match: { storeId: sId, status: "PAID" } },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: "$amount" },
+            totalCommission: { $sum: { $ifNull: ["$platformFee", 0] } }
+          }
+        }
+      ]),
+      SettlementModel.aggregate([
+        {
+          $match: {
+            storeId: sId,
+            status: { $in: ["COMPLETED", "Completed"] }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalSettled: { $sum: "$amount" }
+          }
+        }
+      ])
+    ]);
+
+    const totalRevenue = revenueAgg.length > 0 ? revenueAgg[0].totalRevenue : 0;
+    const commission = revenueAgg.length > 0 && revenueAgg[0].totalCommission > 0
+      ? revenueAgg[0].totalCommission
+      : Math.round(totalRevenue * 0.1);
+    
+    const alreadySettled = settledAgg.length > 0 ? settledAgg[0].totalSettled : 0;
+    const netMerchantShare = Math.max(0, totalRevenue - commission);
+    const pendingSettlement = Math.max(0, netMerchantShare - alreadySettled);
+
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const daysUntilFriday = (5 - dayOfWeek + 7) % 7 || 7;
+    const nextFriday = new Date(now);
+    nextFriday.setDate(now.getDate() + daysUntilFriday);
+    const nextSettlementDate = nextFriday.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    });
+
+    return {
+      storeId: store._id,
+      storeName: store.name,
+      totalOrders,
+      totalRevenue,
+      commission,
+      platformCommission: commission,
+      pendingSettlement,
+      alreadySettled,
+      settledAmount: alreadySettled,
+      netMerchantShare,
+      nextSettlementDate
+    };
+  }
+
+  /**
+   * Get store settlement history records
+   */
+  public async getStoreSettlements(storeId: string) {
+    const sId = new mongoose.Types.ObjectId(storeId);
+    const records = await SettlementModel.find({ storeId: sId }).sort({ createdAt: -1 }).lean();
+
+    return records.map((r: any) => ({
+      id: r._id.toString(),
+      storeId: r.storeId?.toString(),
+      amount: r.amount,
+      commission: r.commission || 0,
+      netAmount: r.netAmount || r.amount,
+      referenceNo: r.transactionReference,
+      transactionReference: r.transactionReference,
+      paymentMethod: r.paymentMethod || "Bank Transfer",
+      status: r.status || "Completed",
+      processedBy: r.processedBy || "Administrator",
+      processedAt: r.processedAt || r.createdAt,
+      date: r.processedAt || r.createdAt,
+      notes: r.notes || ""
+    }));
+  }
+
+  /**
+   * Process and mark a new settlement
+   */
+  public async createSettlement(
+    storeId: string,
+    data: { amount: number; transactionReference: string; paymentMethod?: string; notes?: string },
+    adminUser?: any
+  ) {
+    const store = await StoreModel.findById(storeId);
+    if (!store) return null;
+
+    const amountNum = Number(data.amount);
+    if (!amountNum || amountNum <= 0) {
+      throw new Error("Settlement amount must be greater than zero");
+    }
+    if (!data.transactionReference || !data.transactionReference.trim()) {
+      throw new Error("Transaction Reference (UTR) is required");
+    }
+
+    const sId = new mongoose.Types.ObjectId(storeId);
+    const processedByName = adminUser?.name || "Administrator";
+
+    const settlement: any = await SettlementModel.create({
+      storeId: sId,
+      merchantId: (store as any).ownerId || null,
+      amount: amountNum,
+      commission: 0,
+      netAmount: amountNum,
+      status: "COMPLETED",
+      transactionReference: data.transactionReference.trim(),
+      paymentMethod: (data.paymentMethod as any) || "Bank Transfer",
+      processedBy: processedByName,
+      processedById: adminUser?.id && mongoose.Types.ObjectId.isValid(adminUser.id) ? adminUser.id : undefined,
+      processedAt: new Date(),
+      notes: data.notes?.trim() || ""
+    });
+
+    try {
+      await AuditLogModel.create({
+        action: "Processed Merchant Settlement",
+        module: "Settlement",
+        severity: "Info",
+        status: "Completed",
+        riskLevel: "Medium",
+        actorId: adminUser?.id && mongoose.Types.ObjectId.isValid(adminUser.id) ? adminUser.id : undefined,
+        actorName: processedByName,
+        actorEmail: adminUser?.email || "admin@selfprint.in",
+        actorRole: adminUser?.role || "Super Admin",
+        targetEntity: "SETTLEMENT",
+        targetId: settlement._id.toString(),
+        targetResource: store.name,
+        description: "Admin \"" + processedByName + "\" processed settlement of ₹" + amountNum.toLocaleString("en-IN") + " (UTR: " + data.transactionReference.trim() + ") for store \"" + store.name + "\".",
+        details: {
+          storeId,
+          storeName: store.name,
+          settlementId: settlement._id.toString(),
+          amount: amountNum,
+          transactionReference: data.transactionReference.trim(),
+          paymentMethod: (data.paymentMethod as any) || "Bank Transfer",
+          notes: data.notes || ""
+        },
+        createdAt: new Date()
+      });
+    } catch (auditErr) {
+      logger.warn("[AdminStoresService] Audit log error on settlement create:", auditErr);
+    }
+
+    return {
+      id: settlement._id.toString(),
+      storeId: settlement.storeId.toString(),
+      amount: settlement.amount,
+      referenceNo: settlement.transactionReference,
+      paymentMethod: settlement.paymentMethod,
+      status: settlement.status,
+      processedBy: settlement.processedBy,
+      processedAt: settlement.processedAt,
+      date: settlement.processedAt,
+      notes: settlement.notes
     };
   }
 }

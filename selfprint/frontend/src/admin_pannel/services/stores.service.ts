@@ -2,7 +2,11 @@
 import {
   AdminStoreItem,
   StoreStatsData,
-  StoreFormValues
+  StoreFormValues,
+  StoreBankDetails,
+  SettlementSummaryData,
+  SettlementRecord,
+  CreateSettlementInput
 } from '../types/store.types';
 
 export interface FetchStoresParams {
@@ -122,7 +126,51 @@ export const adminStoresService = {
   async deleteStore(id: string) {
     const res = await apiClient.delete(`/admin/stores/${id}`);
     return res.data?.data;
+  },
+
+
+  /**
+   * Fetch bank details for a store (masked by default, reveal=true logs audit)
+   */
+  async fetchStoreBankDetails(id: string, reveal: boolean = false): Promise<StoreBankDetails> {
+    const res = await apiClient.get(`/admin/stores/${id}/bank-details`, {
+      params: reveal ? { reveal: 'true' } : {}
+    });
+    return res.data?.data;
+  },
+
+  /**
+   * Log sensitive access (Copy, Download statement, etc.)
+   */
+  async logBankDetailsAccess(id: string, action: string) {
+    const res = await apiClient.post(`/admin/stores/${id}/bank-details/log-access`, { action });
+    return res.data?.data;
+  },
+
+  /**
+   * Fetch settlement summary for a store
+   */
+  async fetchSettlementSummary(id: string): Promise<SettlementSummaryData> {
+    const res = await apiClient.get(`/admin/stores/${id}/settlement-summary`);
+    return res.data?.data;
+  },
+
+  /**
+   * Fetch settlement history records for a store
+   */
+  async fetchStoreSettlements(id: string): Promise<SettlementRecord[]> {
+    const res = await apiClient.get(`/admin/stores/${id}/settlements`);
+    return res.data?.data;
+  },
+
+  /**
+   * Record new payout settlement
+   */
+  async createSettlement(id: string, data: CreateSettlementInput): Promise<SettlementRecord> {
+    const res = await apiClient.post(`/admin/stores/${id}/settlements`, data);
+    return res.data?.data;
   }
+
 };
 
 export default adminStoresService;

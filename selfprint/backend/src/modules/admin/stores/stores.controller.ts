@@ -157,6 +157,96 @@ export class AdminStoresController extends BaseController {
       next(error);
     }
   };
+
+  public getStoreBankDetails = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const reveal = req.query.reveal === "true";
+      const adminUser = (req as any).user;
+      const bankDetails = await this.service.getStoreBankDetails(req.params.id, reveal, adminUser);
+      if (!bankDetails) {
+        ApiResponse.error(res, "Store not found", HTTP_STATUS.NOT_FOUND);
+        return;
+      }
+      this.sendSuccess(res, "Store bank details fetched successfully", bankDetails);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public logBankDetailsAccess = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const { action } = req.body;
+      const adminUser = (req as any).user;
+      const logged = await this.service.logBankDetailsAccess(req.params.id, action, adminUser);
+      if (!logged) {
+        ApiResponse.error(res, "Store not found", HTTP_STATUS.NOT_FOUND);
+        return;
+      }
+      this.sendSuccess(res, "Bank details access logged successfully", logged);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getSettlementSummary = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const summary = await this.service.getSettlementSummary(req.params.id);
+      if (!summary) {
+        ApiResponse.error(res, "Store not found", HTTP_STATUS.NOT_FOUND);
+        return;
+      }
+      this.sendSuccess(res, "Settlement summary fetched successfully", summary);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getStoreSettlements = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const settlements = await this.service.getStoreSettlements(req.params.id);
+      this.sendSuccess(res, "Store settlements fetched successfully", settlements);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public createSettlement = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const adminUser = (req as any).user;
+      const settlement = await this.service.createSettlement(req.params.id, req.body, adminUser);
+      if (!settlement) {
+        ApiResponse.error(res, "Store not found", HTTP_STATUS.NOT_FOUND);
+        return;
+      }
+      this.sendCreated(res, "Settlement created and recorded successfully", settlement);
+    } catch (error: any) {
+      if (error.message && (error.message.includes("greater than zero") || error.message.includes("required"))) {
+        ApiResponse.error(res, error.message, HTTP_STATUS.BAD_REQUEST);
+        return;
+      }
+      next(error);
+    }
+  };
 }
 
 export const adminStoresController = new AdminStoresController();

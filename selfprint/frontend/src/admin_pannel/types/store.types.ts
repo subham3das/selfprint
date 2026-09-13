@@ -82,3 +82,58 @@ export interface StoreFormValues {
   printerCount: number;
   status: StoreStatus;
 }
+
+
+export interface StoreBankDetails {
+  storeId: string;
+  storeName: string;
+  accountHolderName: string;
+  bankName: string;
+  branchName?: string;
+  accountNumber: string;
+  ifscCode: string;
+  upiId?: string;
+  settlementMethod: 'Bank Transfer' | 'UPI' | string;
+  verificationStatus: 'Verified' | 'Pending' | 'Rejected' | string;
+  isVerified: boolean;
+  verifiedAt?: string;
+  updatedAt?: string;
+  isMasked: boolean;
+}
+
+export interface SettlementSummaryData {
+  storeId: string;
+  storeName: string;
+  totalOrders: number;
+  totalRevenue: number;
+  commission: number;
+  platformCommission: number;
+  pendingSettlement: number;
+  alreadySettled: number;
+  settledAmount: number;
+  netMerchantShare: number;
+  nextSettlementDate: string;
+}
+
+export interface SettlementRecord {
+  id: string;
+  storeId: string;
+  amount: number;
+  commission?: number;
+  netAmount?: number;
+  referenceNo: string;
+  transactionReference: string;
+  paymentMethod: string;
+  status: 'Completed' | 'Pending' | 'Failed' | 'COMPLETED' | 'PENDING' | 'FAILED' | string;
+  processedBy: string;
+  processedAt: string;
+  date: string;
+  notes?: string;
+}
+
+export interface CreateSettlementInput {
+  amount: number;
+  transactionReference: string;
+  paymentMethod?: string;
+  notes?: string;
+}

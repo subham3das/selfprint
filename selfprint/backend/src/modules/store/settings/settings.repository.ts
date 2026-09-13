@@ -126,8 +126,38 @@ export class SettingsRepository {
     return StoreSettingsModel.findOneAndUpdate({ storeId }, { $set: updates }, { new: true, upsert: true }).exec();
   }
 
-  public async updateStoreBankAccount(storeId: mongoose.Types.ObjectId, updates: Partial<IStoreBankAccount>): Promise<IStoreBankAccount | null> {
-    return StoreBankAccountModel.findOneAndUpdate({ storeId }, { $set: updates }, { new: true, upsert: true }).exec();
+  public async updateStoreBankAccount(
+    storeId: mongoose.Types.ObjectId,
+    updates: Partial<IStoreBankAccount>,
+    meta?: { ipAddress?: string; userAgent?: string; updatedBy?: string }
+  ): Promise<IStoreBankAccount | null> {
+    const existing = await StoreBankAccountModel.findOne({ storeId });
+    if (existing) {
+      // Archive existing state to history if changing critical bank fields
+      if (
+        (updates.accountNumber && updates.accountNumber !== existing.accountNumber) ||
+        (updates.ifscCode && updates.ifscCode !== existing.ifscCode) ||
+        (updates.upiId && updates.upiId !== existing.upiId) ||
+        (updates.accountHolderName && updates.accountHolderName !== existing.accountHolderName) ||
+        (updates.bankName && updates.bankName !== existing.bankName)
+      ) {
+        existing.history.push({
+          accountHolderName: existing.accountHolderName,
+          accountNumber: existing.accountNumber,
+          ifscCode: existing.ifscCode,
+          bankName: existing.bankName,
+          branchName: existing.branchName,
+          upiId: existing.upiId,
+          updatedAt: new Date(),
+          updatedBy: meta?.updatedBy || 'Merchant',
+          ipAddress: meta?.ipAddress || '127.0.0.1',
+          userAgent: meta?.userAgent || 'Browser'
+        });
+      }
+      Object.assign(existing, updates);
+      return existing.save();
+    }
+    return StoreBankAccountModel.create({ storeId, ...updates });
   }
 }
 

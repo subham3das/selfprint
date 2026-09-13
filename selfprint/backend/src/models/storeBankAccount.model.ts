@@ -1,4 +1,17 @@
-import mongoose, { Schema, Model } from 'mongoose';
+﻿import mongoose, { Schema, Model } from 'mongoose';
+
+export interface IBankAccountHistory {
+  accountHolderName: string;
+  accountNumber: string;
+  ifscCode: string;
+  bankName: string;
+  branchName?: string;
+  upiId?: string;
+  updatedAt: Date;
+  updatedBy?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
 
 export interface IStoreBankAccount {
   _id: mongoose.Types.ObjectId;
@@ -10,7 +23,10 @@ export interface IStoreBankAccount {
   branchName?: string;
   upiId?: string;
   isVerified: boolean;
+  verificationStatus: 'Verified' | 'Pending' | 'Rejected';
+  settlementMethod: 'Bank Transfer' | 'UPI';
   verifiedAt?: Date;
+  history: IBankAccountHistory[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -57,9 +73,36 @@ const storeBankAccountSchema = new Schema<IStoreBankAccount>(
       type: Boolean,
       default: true
     },
+    verificationStatus: {
+      type: String,
+      enum: ['Verified', 'Pending', 'Rejected'],
+      default: 'Verified'
+    },
+    settlementMethod: {
+      type: String,
+      enum: ['Bank Transfer', 'UPI'],
+      default: 'Bank Transfer'
+    },
     verifiedAt: {
       type: Date,
       default: Date.now
+    },
+    history: {
+      type: [
+        {
+          accountHolderName: String,
+          accountNumber: String,
+          ifscCode: String,
+          bankName: String,
+          branchName: String,
+          upiId: String,
+          updatedAt: { type: Date, default: Date.now },
+          updatedBy: String,
+          ipAddress: String,
+          userAgent: String
+        }
+      ],
+      default: []
     }
   },
   {
