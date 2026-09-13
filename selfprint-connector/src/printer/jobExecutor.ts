@@ -1,9 +1,13 @@
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { printerCache } from './printerCache';
 import { jobDownloader } from './jobDownloader';
 import { printHistory } from './printHistory';
 import { spoolerWatcher } from './spoolerWatcher';
+import { connectorStore } from '../storage/connectorStore';
 import { printLogger } from '../utils/printLogger';
 import { logger } from '../utils/logger';
 import {
@@ -145,7 +149,55 @@ export class PrintJobExecutor {
     });
 
     try {
-      // Build PowerShell Native Spooler Command
+      const isVirtualPrinter = Boolean(printer.isVirtual || printer.connectionType === 'VIRTUAL' || connectorStore.isTestMode());
+
+      if (isVirtualPrinter) {
+        // =========================================================================
+        // TEST MODE / VIRTUAL PRINTER PIPELINE
+        // Automatically saves PDF to Documents\SelfPrint\Test Prints\Order-XXX.pdf
+        // =========================================================================
+        const documentsPath = process.env.USERPROFILE
+          ? path.join(process.env.USERPROFILE, 'Documents')
+          : (process.platform === 'win32'
+            ? path.join(process.env.HOMEDRIVE || 'C:', process.env.HOMEPATH || '', 'Documents')
+            : path.join(os.homedir(), 'Documents'));
+        
+        const testPrintsDir = path.join(documentsPath, 'SelfPrint', 'Test Prints');
+        if (!fs.existsSync(testPrintsDir)) {
+          fs.mkdirSync(testPrintsDir, { recursive: true });
+        }
+
+        const rawJobId = (options.jobId || '1000').replace(/[^a-zA-Z0-9_-]/g, '');
+        const orderName = rawJobId.toLowerCase().startsWith('order-') ? rawJobId : `Order-${rawJobId}`;
+        const outputFilePath = path.join(testPrintsDir, `${orderName}.pdf`);
+
+        // Copy downloaded PDF to destination
+        fs.copyFileSync(downloadResult.filePath, outputFilePath);
+
+        logger.info(`[TestMode] PDF generated: ${outputFilePath}`);
+
+        // Stream page progression
+        for (let p = 1; p <= totalPages; p++) {
+          if (isCancelled) {
+            throw new Error('Print job cancelled by operator.');
+          }
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          printLogger.pagePrinted(options.jobId, p, totalPages);
+          this.emitStatus(options, 'PAGE_PROGRESS', printer.name, { currentPage: p, totalPages }, onStatusUpdate);
+        }
+
+        const durationMs = Date.now() - startTime;
+        printLogger.printFinished(options.jobId, printer.name, durationMs);
+        logger.info(`[TestMode] Job completed: ${options.jobId}`);
+
+        // 7. Status: COMPLETED
+        this.emitStatus(options, 'COMPLETED', printer.name, { totalPages, currentPage: totalPages }, onStatusUpdate);
+        return { success: true };
+      }
+
+      // =========================================================================
+      // PHYSICAL PRINTER PIPELINE (Windows Spooler)
+      // =========================================================================
       const sanitizedPrinter = printer.name.replace(/'/g, "''");
       const sanitizedFilePath = downloadResult.filePath.replace(/'/g, "''");
 

@@ -196,6 +196,18 @@ export function initSocket(): Socket {
   socket.on('refresh_printers', handleRefresh);
   socket.on('rescan', handleRefresh);
 
+  // 3b. Test Mode Changed Event
+  const handleTestMode = async (data: { testMode?: boolean; enabled?: boolean; storeId?: string }) => {
+    const isEnabled = Boolean(data?.testMode ?? data?.enabled);
+    logger.info(`[TestMode] Received testModeChanged event from backend (Enabled: ${isEnabled}). Hot-reloading printer discovery...`);
+    connectorStore.setTestMode(isEnabled);
+    await printerWatcher.scan(true);
+    await sendHeartbeat();
+  };
+  socket.on('store:testModeChanged', handleTestMode);
+  socket.on('test_mode_changed', handleTestMode);
+  socket.on('store_test_mode', handleTestMode);
+
   // 4. Hot Config Reload
   socket.on('update_config', (data: { settings?: Partial<typeof connectorSettings> }) => {
     if (data?.settings) {

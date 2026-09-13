@@ -19,7 +19,8 @@ export type ConnectionType =
   | 'SHARED'
   | 'LOCAL'
   | 'WIRELESS'
-  | 'BLUETOOTH';
+  | 'BLUETOOTH'
+  | 'VIRTUAL';
 
 export type PrintJobStatus =
   | 'QUEUED'
@@ -58,6 +59,8 @@ export interface Printer {
   mac: string | null;
   serialNumber: string | null;
   lastSeen: string;
+  isVirtual?: boolean;
+  isTestMode?: boolean;
 }
 
 export interface PrintJobOptions {

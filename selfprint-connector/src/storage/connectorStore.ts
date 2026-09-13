@@ -11,6 +11,7 @@ export interface ConnectorSettings {
   scanIntervalMs: number;
   heartbeatIntervalMs: number;
   includeVirtualPrinters: boolean;
+  testMode?: boolean;
   logLevel?: string;
 }
 
@@ -138,8 +139,22 @@ class ConnectorStore {
     this.save();
   }
 
+  public isTestMode(): boolean {
+    return Boolean(this.data.connectorSettings.testMode || this.data.connectorSettings.includeVirtualPrinters);
+  }
+
+  public setTestMode(enabled: boolean): void {
+    this.data.connectorSettings.testMode = enabled;
+    this.data.connectorSettings.includeVirtualPrinters = enabled;
+    this.save();
+    logger.info(`[TestMode] ${enabled ? 'Enabled' : 'Disabled'}`);
+  }
+
   public updateSettings(partial: Partial<ConnectorSettings>): void {
     this.data.connectorSettings = { ...this.data.connectorSettings, ...partial };
+    if (partial.testMode !== undefined) {
+      this.data.connectorSettings.includeVirtualPrinters = partial.testMode;
+    }
     this.save();
   }
 }

@@ -256,27 +256,50 @@ export function generatePrinterId(name: string, portName?: string, deviceId?: st
 }
 
 /**
+ * Checks if a printer is a virtual Windows device allowed for Test Mode.
+ */
+export function isAllowedVirtualTestPrinter(printerName: string, driverName?: string): boolean {
+  const name = (printerName || '').toLowerCase().trim();
+  const driver = (driverName || '').toLowerCase().trim();
+  return (
+    name.includes('print to pdf') ||
+    name.includes('xps document writer') ||
+    name.includes('xps') ||
+    driver.includes('print to pdf') ||
+    driver.includes('xps document writer')
+  );
+}
+
+/**
  * Converts raw Windows WMI/CIM printer data into standard Printer interface.
  */
-export async function mapRawToPrinter(raw: RawPrinterData): Promise<Printer | null> {
+export async function mapRawToPrinter(raw: RawPrinterData, testMode: boolean = false): Promise<Printer | null> {
   if (!raw || !raw.Name) return null;
 
-  // Strictly filter out all virtual printers and software document converters
-  if (isVirtualPrinter(raw.Name, raw.DriverName, raw.PortName)) {
-    return null;
+  const isVirtual = isVirtualPrinter(raw.Name, raw.DriverName, raw.PortName);
+
+  // If virtual printer, strictly filter out unless testMode is enabled and it's an allowed virtual test printer
+  if (isVirtual) {
+    if (!testMode || !isAllowedVirtualTestPrinter(raw.Name, raw.DriverName)) {
+      return null;
+    }
   }
 
-  const { status, isOnline } = mapPrinterStatus(raw);
-  const connectionType = determineConnectionType(raw.PortName, raw.Network, raw.Shared);
-  const { manufacturer, model } = parseManufacturerAndModel(raw.Name, raw.DriverName);
+  const { status, isOnline } = isVirtual ? { status: 'ONLINE' as const, isOnline: true } : mapPrinterStatus(raw);
+  const connectionType: ConnectionType = isVirtual ? 'VIRTUAL' : determineConnectionType(raw.PortName, raw.Network, raw.Shared);
+  const { manufacturer, model } = isVirtual
+    ? { manufacturer: 'Microsoft', model: raw.Name.includes('XPS') ? 'Virtual XPS Document Writer' : 'Virtual PDF Printer' }
+    : parseManufacturerAndModel(raw.Name, raw.DriverName);
   const id = generatePrinterId(raw.Name, raw.PortName, raw.DeviceID);
 
-  const capabilities = Array.isArray(raw.CapabilityDescriptions) ? raw.CapabilityDescriptions : [];
-  const colorSupport = capabilities.some((c) => /color/i.test(c));
-  const duplexSupport = capabilities.some((c) => /duplex|two-sided/i.test(c));
+  const capabilities = isVirtual
+    ? ['COPIES', 'COLOR', 'TEST_PRINTER', 'VIRTUAL', 'PDF_GENERATOR']
+    : (Array.isArray(raw.CapabilityDescriptions) ? raw.CapabilityDescriptions : []);
+  const colorSupport = isVirtual ? true : capabilities.some((c) => /color/i.test(c));
+  const duplexSupport = isVirtual ? true : capabilities.some((c) => /duplex|two-sided/i.test(c));
 
-  const ipAddress = extractIpFromPort(raw.PortName || '', raw.HostAddress);
-  const mac = await resolveMacForIp(ipAddress);
+  const ipAddress = isVirtual ? null : extractIpFromPort(raw.PortName || '', raw.HostAddress);
+  const mac = isVirtual ? null : await resolveMacForIp(ipAddress);
 
   const hRes = raw.HorizontalResolution || 600;
   const vRes = raw.VerticalResolution || 600;
@@ -285,15 +308,15 @@ export async function mapRawToPrinter(raw: RawPrinterData): Promise<Printer | nu
   return {
     id,
     name: raw.Name,
-    driverName: raw.DriverName || 'Generic Printer Driver',
-    portName: raw.PortName || 'UNKNOWN',
-    location: raw.Location || '',
-    comment: raw.Comment || '',
+    driverName: raw.DriverName || (isVirtual ? 'Microsoft Software Printer Driver' : 'Generic Printer Driver'),
+    portName: raw.PortName || (isVirtual ? 'PORTPROMPT:' : 'UNKNOWN'),
+    location: isVirtual ? 'Local Virtual Device (Test Mode)' : (raw.Location || ''),
+    comment: isVirtual ? 'SelfPrint Virtual Test Printer' : (raw.Comment || ''),
     manufacturer,
     model,
     isDefault: Boolean(raw.Default),
-    isNetwork: Boolean(raw.Network) || connectionType === 'NETWORK' || connectionType === 'WIRELESS',
-    isShared: Boolean(raw.Shared) || connectionType === 'SHARED',
+    isNetwork: isVirtual ? false : (Boolean(raw.Network) || connectionType === 'NETWORK' || connectionType === 'WIRELESS'),
+    isShared: isVirtual ? false : (Boolean(raw.Shared) || connectionType === 'SHARED'),
     shareName: raw.ShareName || '',
     status,
     isOnline,
@@ -308,6 +331,8 @@ export async function mapRawToPrinter(raw: RawPrinterData): Promise<Printer | nu
     ipAddress,
     mac,
     serialNumber: raw.SerialNumber || null,
-    lastSeen: new Date().toISOString()
+    lastSeen: new Date().toISOString(),
+    isVirtual: Boolean(isVirtual),
+    isTestMode: Boolean(isVirtual && testMode)
   };
 }

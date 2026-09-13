@@ -2,6 +2,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { IPrinterDetector, Printer } from './types';
 import { mapRawToPrinter, RawPrinterData } from './printerMapper';
+import { connectorStore } from '../storage/connectorStore';
 import { logger } from '../utils/logger';
 
 const execAsync = promisify(exec);
@@ -12,6 +13,7 @@ export class WindowsPrinterDetector implements IPrinterDetector {
    */
   public async detectPrinters(): Promise<Printer[]> {
     const startTime = Date.now();
+    const isTestMode = connectorStore.isTestMode();
 
     try {
       // Single compact PowerShell query combining Win32_Printer with quick attributes
@@ -35,15 +37,18 @@ export class WindowsPrinterDetector implements IPrinterDetector {
       const printerMap: Map<string, Printer> = new Map();
 
       for (const raw of parsed) {
-        const printer = await mapRawToPrinter(raw);
+        const printer = await mapRawToPrinter(raw, isTestMode);
         if (printer && !printerMap.has(printer.id)) {
           printerMap.set(printer.id, printer);
+          if (printer.isVirtual) {
+            logger.info(`[TestMode] Virtual printer detected: ${printer.name}`);
+          }
         }
       }
 
       const printers = Array.from(printerMap.values());
       const durationMs = Date.now() - startTime;
-      logger.debug(`Detected ${printers.length} printer(s) in ${durationMs}ms.`);
+      logger.debug(`Detected ${printers.length} printer(s) in ${durationMs}ms (TestMode: ${isTestMode ? 'ON' : 'OFF'}).`);
 
       return printers;
     } catch (error) {
