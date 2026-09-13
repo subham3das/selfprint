@@ -40,6 +40,7 @@ export const usePrinterMonitoring = () => {
     socketConnected,
     physicalPrinters,
     physicalPrinterCount,
+    testMode,
     hydrate
   } = useConnectorStore();
 
@@ -48,8 +49,33 @@ export const usePrinterMonitoring = () => {
     hydrate();
   }, [hydrate]);
 
+  // Helper to detect virtual test printers
+  const isVirtual = (p: any) => {
+    const name = (p.name || p.printerName || '').toLowerCase();
+    const driver = (p.driverName || '').toLowerCase();
+    const model = (p.model || '').toLowerCase();
+    return Boolean(
+      p.isVirtual ||
+      p.testMode ||
+      name.includes('print to pdf') ||
+      name.includes('xps') ||
+      name.includes('virtual') ||
+      name.includes('onenote') ||
+      driver.includes('print to pdf') ||
+      model.includes('virtual')
+    );
+  };
+
+  // Strictly filter out virtual printers if Test Mode is OFF
+  const availablePrinters = (physicalPrinters || []).filter((p: any) => {
+    if (!testMode && isVirtual(p)) {
+      return false;
+    }
+    return true;
+  });
+
   // Map physical printers to DetectedPrinter format
-  const mappedPrinters: DetectedPrinter[] = (physicalPrinters || []).map((p: any) => ({
+  const mappedPrinters: DetectedPrinter[] = availablePrinters.map((p: any) => ({
     id: p.id || p.deviceId || p.name,
     name: p.name || p.printerName,
     brand: p.brand || 'Generic',

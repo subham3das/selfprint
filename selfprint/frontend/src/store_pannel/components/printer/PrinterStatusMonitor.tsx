@@ -22,6 +22,7 @@ interface PrinterStatusMonitorProps {
   printer: DetectedPrinter | PrinterStatusInfo;
   isConfigured?: boolean;
   isPaused: boolean;
+  isTestMode?: boolean;
   isConnectorOnline?: boolean;
   connectionState?: string;
   onRefreshConnector?: () => Promise<boolean | void>;
@@ -40,6 +41,7 @@ export const PrinterStatusMonitor: React.FC<PrinterStatusMonitorProps> = ({
   printer,
   isConfigured,
   isPaused,
+  isTestMode = false,
   isConnectorOnline,
   connectionState: _connectionState,
   onRefreshConnector,
@@ -107,6 +109,14 @@ export const PrinterStatusMonitor: React.FC<PrinterStatusMonitorProps> = ({
   };
 
   const status = getStatusColor();
+
+  const isPrinterVirtual = Boolean(
+    (printer as any).isVirtual ||
+    (printer as any).testMode ||
+    printer.name?.toLowerCase().includes('virtual') ||
+    printer.name?.toLowerCase().includes('print to pdf') ||
+    (printer as any).model?.toLowerCase().includes('virtual')
+  );
 
   const isPrinterConnected =
     isConfigured !== false &&
@@ -262,7 +272,7 @@ export const PrinterStatusMonitor: React.FC<PrinterStatusMonitorProps> = ({
               <div>
                 <div className="flex items-center gap-1.5">
                   <h3 className="text-xs font-black text-slate-900 tracking-tight">
-                    {Boolean((printer as any).isVirtual || printer.name?.toLowerCase().includes('virtual') || printer.name?.toLowerCase().includes('print to pdf')) ? 'Virtual Printer' : 'Hardware Status'}
+                    {isTestMode && isPrinterVirtual ? 'Virtual Printer' : 'Hardware Status'}
                   </h3>
                   {Boolean((printer as any).isVirtual || printer.name?.toLowerCase().includes('virtual') || printer.name?.toLowerCase().includes('print to pdf')) && (
                     <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-purple-100 text-purple-700 border border-purple-200">

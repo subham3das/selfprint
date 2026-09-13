@@ -84,7 +84,18 @@ export class DashboardService {
    * Map IPrinter to PrinterStatusDto
    */
   private mapPrinterToDto(printer: IPrinter | null, isTestMode: boolean = false): PrinterStatusDto {
-    if (!printer) {
+    const printerName = printer?.printerName || (printer as any)?.name || '';
+    const printerModel = printer?.model || '';
+    const isVirtual = printer ? Boolean(
+      (printer as any).isVirtual ||
+      printer.connectionType === 'VIRTUAL' ||
+      printerName.toLowerCase().includes('print to pdf') ||
+      printerName.toLowerCase().includes('virtual') ||
+      printerModel.toLowerCase().includes('virtual') ||
+      ((printer as any).driver || (printer as any).driverName || '').toLowerCase().includes('print to pdf')
+    ) : false;
+
+    if (!printer || (isVirtual && !isTestMode)) {
       if (isTestMode) {
         return {
           id: 'virtual_selfprint_pdf_printer',
