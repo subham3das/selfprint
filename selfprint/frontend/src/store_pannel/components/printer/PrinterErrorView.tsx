@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import {
   AlertTriangle,
   RotateCcw,
@@ -38,19 +38,18 @@ export const PrinterErrorView: React.FC<PrinterErrorViewProps> = ({
           badgeText: 'Hardware Required',
           title: 'No Physical Printer Detected',
           description:
-            "We couldn't find any physical printer connected to this computer. Virtual software printers (PDF, XPS, OneNote) are filtered out.",
+            "We couldn't find any physical printer connected to your store's Windows machine. Virtual software printers (PDF, XPS, OneNote) are filtered out.",
           reasons: [
-            'Printer is turned off',
-            'USB cable disconnected or loose',
-            'Printer driver not installed in Windows',
-            'Printer connected to another computer',
-            'Self Print Host Service is not running'
+            'Physical printer is turned off or unplugged',
+            'USB or network cable disconnected',
+            'Printer manufacturer driver not installed in Windows',
+            'SelfPrint Desktop Connector is offline or disconnected'
           ],
           steps: [
-            'Turn ON your printer and check power indicator LED',
-            'Connect USB cable firmly to your computer (or verify Wi-Fi/LAN)',
+            'Turn ON your physical printer and check the power LED',
+            'Connect USB cable firmly to the Windows host PC (or verify Wi-Fi/LAN)',
             'Install the manufacturer driver in Windows if not already installed',
-            'Ensure Self Print Host Service is running, then click Scan Again'
+            'Ensure SelfPrint Desktop Connector is running on the host PC, then click Scan Again'
           ],
           primaryAction: {
             label: 'Scan Again',
@@ -63,18 +62,18 @@ export const PrinterErrorView: React.FC<PrinterErrorViewProps> = ({
           icon: Download,
           badgeColor: 'bg-rose-50 text-rose-800 border-rose-200',
           badgeText: 'Connector Offline',
-          title: 'Connector Not Installed or Offline',
+          title: 'Connector Not Paired or Offline',
           description:
-            'Browsers cannot communicate directly with physical USB ports due to security sandboxing. The SelfPrint Desktop Connector is required to detect local physical printers via port 4500.',
+            'The SelfPrint Desktop Connector must be running on your Windows computer and connected to the cloud to detect physical printers.',
           reasons: [
-            'SelfPrint Desktop Connector host service is not running on port 4500',
-            'Connector application was closed or stopped in Windows',
-            'Firewall or security software is blocking connector port 4500'
+            'SelfPrint Desktop Connector is not running on the Windows host computer',
+            'Connector application was closed or machine was put to sleep',
+            'Internet connection lost on the host computer or pairing has expired'
           ],
           steps: [
-            'Download and install the SelfPrint Desktop Connector',
-            'Run the SelfPrint Desktop application from Start Menu or desktop shortcut',
-            'Ensure Desktop Connector is running, then click Refresh Status'
+            'Launch the SelfPrint Desktop application on your Windows machine',
+            'Verify the connector displays "Online" and shows your store name',
+            'Click Refresh Status once the connector is active'
           ],
           primaryAction: {
             label: 'Refresh Status',
@@ -89,19 +88,19 @@ export const PrinterErrorView: React.FC<PrinterErrorViewProps> = ({
           badgeText: 'Driver Missing',
           title: 'Printer Driver Not Installed',
           description:
-            'Your printer was detected by Windows, but the required device driver software is missing or outdated.',
+            'Windows recognizes a USB device, but the manufacturer print driver is missing or corrupted.',
           reasons: [
-            'Windows does not have the pre-installed driver for this printer model',
-            'Driver was corrupted during a recent operating system update',
-            'Manufacturer specific utility is required'
+            'Printer was plugged in without installing manufacturer drivers',
+            'Generic Windows fallback driver lacks bidirectional communication support',
+            'Windows Print Spooler needs driver re-registration'
           ],
           steps: [
-            'Visit the official manufacturer website (HP, Epson, or Canon)',
-            'Download and run the driver setup installer for your model',
-            'Once installation finishes, click Scan Again below'
+            'Download and run the official driver installer from HP, Canon, or Epson',
+            'Complete installation wizard in Windows and restart printer',
+            'Return here and click Retry Driver Check'
           ],
           primaryAction: {
-            label: 'Scan Again',
+            label: 'Retry Driver Check',
             onClick: onRetry
           }
         };
@@ -110,22 +109,22 @@ export const PrinterErrorView: React.FC<PrinterErrorViewProps> = ({
         return {
           icon: Power,
           badgeColor: 'bg-rose-50 text-rose-800 border-rose-200',
-          badgeText: 'Printer Offline',
-          title: 'Printer is Currently Offline',
+          badgeText: 'Power / Cable',
+          title: 'Printer is Turned Off or Disconnected',
           description:
-            'Self Print could not establish a live communication link with the physical printer hardware.',
+            'The printer driver exists in Windows, but the device is not responding to status queries.',
           reasons: [
-            'Printer power switch is turned off',
-            'USB cable is loose or unplugged from your computer',
-            'Wi-Fi printer is disconnected from the local router'
+            'Power cord is disconnected or printer switch is in OFF position',
+            'Printer has entered deep sleep or hibernation mode',
+            'USB cable is loose or plugged into an unpowered hub'
           ],
           steps: [
-            'Verify the printer power indicator LED is solid green',
-            'Unplug and firmly re-seat the USB cable on both ends',
-            'If wireless, ensure printer and computer share the same Wi-Fi'
+            'Press the Power button on the printer to wake it up',
+            'Unplug and firmly reconnect the USB cable directly to the PC',
+            'Click Retry Connection once power LED is solid green'
           ],
           primaryAction: {
-            label: 'Reconnect & Retry',
+            label: 'Retry Connection',
             onClick: onRetry
           }
         };
@@ -231,7 +230,7 @@ export const PrinterErrorView: React.FC<PrinterErrorViewProps> = ({
           badgeText: 'Communication Error',
           title: 'Unable to Communicate with Printer',
           description:
-            'The printer did not respond to bidirectional status ping requests.',
+            'The printer did not respond to bidirectional status queries via the connector.',
           reasons: [
             'USB port timeout or faulty cable connection',
             'Network firewall blocking raw print port 9100 or LPR 515',

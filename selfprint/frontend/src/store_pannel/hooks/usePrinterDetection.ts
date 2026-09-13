@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+﻿import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   PrinterWizardStep,
   DetectedPrinter,
@@ -91,12 +91,11 @@ export const usePrinterDetection = (options?: {
   const scanTimerRef = useRef<NodeJS.Timeout | null>(null);
   const messageTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ─── Step 1: Check Backend Ownership Status (Single Source of Truth) ─────
+  // ──── Step 1: Check Backend Ownership Status (Single Source of Truth) ─────
   const refreshConnectorStatus = useCallback(async () => {
     setIsCheckingStatus(true);
     try {
       const backendRes = await printerService.getConnectorStatus(storeId);
-      const isHostAlive = (await printerService.checkHostService()).isRunning;
 
       setBackendConnector({
         paired: backendRes.paired,
@@ -111,7 +110,7 @@ export const usePrinterDetection = (options?: {
         state: backendRes.state
       });
 
-      // Strict State Machine Determination
+      // Strict State Machine Determination based solely on Backend / MongoDB state
       setConnectorState((prevState) => {
         // If pairing is explicitly in progress in the UI, keep PAIRING state unless backend confirms paired
         if (prevState === 'PAIRING' && !backendRes.paired) {
@@ -133,13 +132,8 @@ export const usePrinterDetection = (options?: {
           return 'INSTALLED_NOT_RUNNING';
         }
 
-        // 3. Unpaired: Check if local desktop software is running on :4500
-        if (isHostAlive) {
-          return 'RUNNING_UNPAIRED';
-        }
-
-        // 4. Desktop software is not installed / not running
-        return 'NOT_INSTALLED';
+        // 3. Unpaired (ready to pair with code)
+        return 'RUNNING_UNPAIRED';
       });
     } catch (err) {
       console.warn('Failed to refresh connector status:', err);
@@ -148,10 +142,9 @@ export const usePrinterDetection = (options?: {
     }
   }, [storeId]);
 
-  // ─── Step 2: Generate 10-Minute Pairing Code from Backend ────────────────
+  // ──── Step 2: 10-Minute Pairing Code Generator ────────────────────────────
   const generatePairingCode = useCallback(async () => {
     setIsGeneratingCode(true);
-    setConnectorState('PAIRING');
     try {
       const res = await printerService.generatePairingCode(storeId);
       const code = res.code || res.pairingCode;
@@ -159,6 +152,7 @@ export const usePrinterDetection = (options?: {
 
       setPairingCode(code);
       setExpiresInSeconds(seconds);
+      setConnectorState('PAIRING');
 
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = setInterval(() => {
@@ -172,7 +166,6 @@ export const usePrinterDetection = (options?: {
       }, 1000);
     } catch (err) {
       console.error('Failed to generate pairing code:', err);
-      setConnectorState('RUNNING_UNPAIRED');
     } finally {
       setIsGeneratingCode(false);
     }
@@ -184,7 +177,7 @@ export const usePrinterDetection = (options?: {
     refreshConnectorStatus();
   }, [refreshConnectorStatus]);
 
-  // ─── Step 3: Realtime Socket.IO Listeners ─────────────────────────────────
+  // ──── Step 3: Realtime Socket.IO Listeners ─────────────────────────────────
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
@@ -267,7 +260,7 @@ export const usePrinterDetection = (options?: {
     };
   }, [refreshConnectorStatus]);
 
-  // ─── Step 4: Hardware Scanning ───────────────────────────────────────────
+  // ──── Step 4: Hardware Scanning ──────────────────────────────────────────
   const startScanning = async (simulateError?: PrinterErrorType) => {
     setCurrentError(null);
 
@@ -281,7 +274,7 @@ export const usePrinterDetection = (options?: {
     }
 
     // Verify backend confirms connection before scanning
-    if (!backendConnector.paired || !backendConnector.socketConnected) {
+    if (!backendConnector.paired || backendConnector.status !== 'ONLINE') {
       setCurrentError('HostServiceRequired');
       setCurrentStep('Error');
       return;
@@ -305,7 +298,7 @@ export const usePrinterDetection = (options?: {
     }, 150);
 
     try {
-      const printers = await printerService.detectPrinters();
+      const printers = await printerService.detectPrinters({ storeId });
 
       setScanningProgress(100);
       if (scanTimerRef.current) clearInterval(scanTimerRef.current);
@@ -360,7 +353,7 @@ export const usePrinterDetection = (options?: {
   const runTestPrint = async () => {
     setIsTestPrinting(true);
     try {
-      await printerService.sendTestPrint(selectedPrinter?.id || '', selectedPrinter?.name);
+      await printerService.sendTestPrint(selectedPrinter?.id || '', selectedPrinter?.name, storeId);
       setTestPrintSuccess(true);
     } catch {
       setTestPrintSuccess(false);
