@@ -176,27 +176,21 @@ export class SettingsService {
       const updated = await this.repository.updateStore(store._id, { testMode: isTestMode });
       if (updated) updatedStore = updated;
       logger.info(`[TestMode] Store ${store._id} testMode successfully persisted in DB as ${isTestMode}`);
+
+      const sId = store._id.toString();
+      const tmPayload = { storeId: sId, testMode: isTestMode };
+
+      socketManager.emitToStore(sId, 'store:testModeChanged', tmPayload);
+      socketManager.emitToStore(sId, 'test_mode_changed', tmPayload);
+      socketManager.emitToStore(sId, 'store_test_mode', tmPayload);
+      socketManager.emitToStore(sId, 'printers_updated', { storeId: sId, count: isTestMode ? 1 : 0, printers: [] });
+      socketManager.emitToStore(sId, 'connector:heartbeat', { storeId: sId, status: 'ONLINE', isOnline: true });
+      socketManager.emitToStore(sId, 'dashboard_updated', { storeId: sId });
     }
 
     console.log(`[SettingsService:updatePrinterSettings] Store ${store._id} AFTER SAVE -> Store.testMode:`, (updatedStore as any).testMode, 'StoreSettings.printer.testMode:', settingsDoc?.printer?.testMode);
 
     const full = await this.getFullSettings(storeIdParam);
-
-    // 3. Broadcast real-time events to all store sockets (Store Panel tabs & Desktop Connector)
-    if (isTestMode !== undefined) {
-      socketManager.emitToStore(store._id.toString(), 'store:testModeChanged', {
-        storeId: store._id.toString(),
-        testMode: isTestMode
-      });
-      socketManager.emitToStore(store._id.toString(), 'test_mode_changed', {
-        storeId: store._id.toString(),
-        testMode: isTestMode
-      });
-      socketManager.emitToStore(store._id.toString(), 'store_test_mode', {
-        storeId: store._id.toString(),
-        testMode: isTestMode
-      });
-    }
 
     if (full) {
       socketManager.emitToStore(store._id.toString(), 'store:settingsUpdated', full);

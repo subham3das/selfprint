@@ -473,6 +473,133 @@ class SocketManager {
         this.emitToStore(storeId, 'printer_notification', notif);
       });
 
+      
+      // -------------------------------------------------------------
+      // Job Lifecycle & Automatic Order Completion Handlers
+      // -------------------------------------------------------------
+      socket.on('job_status_update', async (data: any) => {
+        try {
+          const { PrintJobModel } = await import('../models/printJob.model');
+          const mongoose = await import('mongoose');
+          const jobId = data?.jobId || data?.id;
+          if (!jobId) return;
+
+          const isObjectId = mongoose.Types.ObjectId.isValid(jobId);
+          const query: any = isObjectId ? { _id: new mongoose.Types.ObjectId(jobId) } : { jobNumber: jobId };
+
+          const status = String(data?.status || '').toUpperCase();
+          const updateFields: any = {};
+
+          if (status === 'COMPLETED') {
+            updateFields.status = 'Completed';
+            updateFields.completedAt = new Date();
+          } else if (status === 'PRINTING') {
+            updateFields.status = 'Printing';
+            if (!updateFields.startedAt) updateFields.startedAt = new Date();
+          } else if (status === 'FAILED' || status === 'ERROR') {
+            updateFields.status = 'Failed';
+          } else if (status === 'CANCELLED') {
+            updateFields.status = 'Cancelled';
+          }
+
+          const updatedJob = await PrintJobModel.findOneAndUpdate(query, { $set: updateFields }, { new: true }).lean();
+          if (!updatedJob) return;
+
+          const sId = String(updatedJob.storeId || (socket as any).storeId || 'default');
+          const jId = String(updatedJob._id);
+          const jobObj = updatedJob;
+
+          const payload = {
+            jobId: jId,
+            orderId: jId,
+            jobNumber: updatedJob.jobNumber,
+            storeId: sId,
+            status: updatedJob.status,
+            job: jobObj,
+            completedAt: updatedJob.completedAt,
+            timestamp: new Date().toISOString()
+          };
+
+          if (status === 'COMPLETED') {
+            this.emitToStore(sId, 'order_completed', payload);
+            this.emitToStore(sId, 'queue:completed', payload);
+            this.emitToStore(sId, 'queue_changed', { storeId: sId, action: 'STATUS_UPDATED', jobId: jId });
+            this.emitToStore(sId, 'dashboard_updated', { storeId: sId });
+            this.emitToStore(sId, 'PRINT_JOB_STATUS_CHANGED', { jobId: jId, status: 'Completed', job: jobObj });
+
+            this.emitToJob(jId, 'order_completed', payload);
+            this.emitToJob(jId, 'queue:completed', payload);
+            this.emitToJob(jId, 'PRINT_JOB_STATUS_CHANGED', { jobId: jId, status: 'Completed', job: jobObj });
+            this.emitToJob(jId, 'job_status_update', { jobId: jId, status: 'COMPLETED', job: jobObj });
+
+            logger.info(`[Order Complete] Job ${updatedJob.jobNumber} (${jId}) automatically completed by Desktop Connector`);
+          } else if (status === 'PRINTING') {
+            this.emitToStore(sId, 'queue:started', payload);
+            this.emitToStore(sId, 'queue_changed', { storeId: sId, action: 'STATUS_UPDATED', jobId: jId });
+            this.emitToStore(sId, 'PRINT_JOB_STATUS_CHANGED', { jobId: jId, status: 'Printing', job: jobObj });
+
+            this.emitToJob(jId, 'queue:started', payload);
+            this.emitToJob(jId, 'PRINT_JOB_STATUS_CHANGED', { jobId: jId, status: 'Printing', job: jobObj });
+          } else if (status === 'FAILED' || status === 'ERROR') {
+            this.emitToStore(sId, 'queue:failed', payload);
+            this.emitToStore(sId, 'PRINT_JOB_STATUS_CHANGED', { jobId: jId, status: 'Failed', job: jobObj });
+
+            this.emitToJob(jId, 'queue:failed', payload);
+            this.emitToJob(jId, 'PRINT_JOB_STATUS_CHANGED', { jobId: jId, status: 'Failed', job: jobObj });
+          }
+        } catch (err) {
+          logger.error('Error handling job_status_update:', err);
+        }
+      });
+
+      socket.on('job_completed', async (data: any) => {
+        try {
+          const { PrintJobModel } = await import('../models/printJob.model');
+          const mongoose = await import('mongoose');
+          const jobId = data?.jobId || data?.id;
+          if (!jobId) return;
+
+          const isObjectId = mongoose.Types.ObjectId.isValid(jobId);
+          const query: any = isObjectId ? { _id: new mongoose.Types.ObjectId(jobId) } : { jobNumber: jobId };
+
+          const updatedJob = await PrintJobModel.findOneAndUpdate(
+            query,
+            { $set: { status: 'Completed', completedAt: new Date() } },
+            { new: true }
+          ).lean();
+
+          if (!updatedJob) return;
+
+          const sId = String(updatedJob.storeId || (socket as any).storeId || 'default');
+          const jId = String(updatedJob._id);
+          const payload = {
+            jobId: jId,
+            orderId: jId,
+            jobNumber: updatedJob.jobNumber,
+            storeId: sId,
+            status: 'Completed',
+            job: updatedJob,
+            completedAt: updatedJob.completedAt,
+            timestamp: new Date().toISOString()
+          };
+
+          this.emitToStore(sId, 'order_completed', payload);
+          this.emitToStore(sId, 'queue:completed', payload);
+          this.emitToStore(sId, 'queue_changed', { storeId: sId, action: 'STATUS_UPDATED', jobId: jId });
+          this.emitToStore(sId, 'dashboard_updated', { storeId: sId });
+          this.emitToStore(sId, 'PRINT_JOB_STATUS_CHANGED', { jobId: jId, status: 'Completed', job: updatedJob });
+
+          this.emitToJob(jId, 'order_completed', payload);
+          this.emitToJob(jId, 'queue:completed', payload);
+          this.emitToJob(jId, 'PRINT_JOB_STATUS_CHANGED', { jobId: jId, status: 'Completed', job: updatedJob });
+          this.emitToJob(jId, 'job_status_update', { jobId: jId, status: 'COMPLETED', job: updatedJob });
+
+          logger.info(`[Order Complete] Job ${updatedJob.jobNumber} (${jId}) automatically marked COMPLETED via job_completed event`);
+        } catch (err) {
+          logger.error('Error handling job_completed:', err);
+        }
+      });
+
       socket.on('disconnect', (reason) => {
         const connectorId = (socket as any).connectorId;
         const storeId = (socket as any).storeId;

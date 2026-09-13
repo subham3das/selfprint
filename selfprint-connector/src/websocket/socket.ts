@@ -198,12 +198,36 @@ export function initSocket(): Socket {
 
   // 3b. Test Mode Changed Event
   const handleTestMode = async (data: { testMode?: boolean; enabled?: boolean; storeId?: string }) => {
-    const isEnabled = Boolean(data?.testMode ?? data?.enabled);
-    logger.info(`[TestMode] Received testModeChanged event from backend (Enabled: ${isEnabled}). Hot-reloading printer discovery...`);
-    connectorStore.setTestMode(isEnabled);
-    await printerWatcher.scan(true);
-    await sendHeartbeat();
-  };
+      const isEnabled = Boolean(data?.testMode ?? data?.enabled);
+      logger.info(`[TestMode] Received testModeChanged event from backend (Enabled: ${isEnabled}). Immediately hot-reloading printer discovery...`);
+      connectorStore.setTestMode(isEnabled);
+
+      // Force instant rescan without waiting for timer
+      await printerWatcher.scan(true);
+
+      // Immediately sync clean printer list with Cloud Backend
+      const currentPrinters = printerCache.getAll();
+      const curData = connectorStore.getData();
+
+      socket?.emit('printer_sync', {
+        connectorId: curData.connectorId,
+        machineId: curData.machineId,
+        storeId: curData.storeId,
+        printers: currentPrinters,
+        count: currentPrinters.length,
+        timestamp: new Date().toISOString()
+      });
+
+      socket?.emit('printers_updated', {
+        connectorId: curData.connectorId,
+        storeId: curData.storeId,
+        printers: currentPrinters,
+        count: currentPrinters.length,
+        timestamp: new Date().toISOString()
+      });
+
+      await sendHeartbeat();
+    };
   socket.on('store:testModeChanged', handleTestMode);
   socket.on('test_mode_changed', handleTestMode);
   socket.on('store_test_mode', handleTestMode);

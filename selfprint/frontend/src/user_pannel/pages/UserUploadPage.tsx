@@ -9,6 +9,7 @@ import { PaperSizeModal } from '../components/PaperSizeModal';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { PaymentReviewModal } from '../components/PaymentReviewModal';
 import { userPublicService, PublicStoreResponse } from '../services/userPublic.service';
+import { getSocket } from '@/lib/socket';
 import {
   UploadedFileInfo,
   UserPrintJobConfig,
@@ -110,6 +111,27 @@ export const UserUploadPage: React.FC = () => {
     };
 
     fetchStore();
+
+    try {
+      const socket = getSocket();
+      if (socket) {
+        const handleTestModeChange = () => {
+          console.log('[UploadPage] store:testModeChanged received. Refetching store status...');
+          fetchStore();
+        };
+        socket.on('store:testModeChanged', handleTestModeChange);
+        socket.on('test_mode_changed', handleTestModeChange);
+        socket.on('printers_updated', handleTestModeChange);
+
+        return () => {
+          isMounted = false;
+          socket.off('store:testModeChanged', handleTestModeChange);
+          socket.off('test_mode_changed', handleTestModeChange);
+          socket.off('printers_updated', handleTestModeChange);
+        };
+      }
+    } catch {}
+
     return () => {
       isMounted = false;
     };

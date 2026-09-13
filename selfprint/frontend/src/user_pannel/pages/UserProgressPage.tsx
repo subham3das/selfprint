@@ -82,21 +82,51 @@ export const UserProgressPage: React.FC = () => {
           }
         };
 
+        const handleOrderCompleted = (data: any) => {
+          console.log('[Progress] Order completed event received:', data);
+          if (isMounted) {
+            setLiveJob((prev: any) => ({
+              ...prev,
+              status: 'Completed',
+              completedAt: data?.completedAt || new Date().toISOString(),
+              ...(data?.job || {})
+            }));
+          }
+        };
+
+        socket.on('order_completed', handleOrderCompleted);
+        socket.on('job_completed', handleOrderCompleted);
         socket.on('queue:started', handleJobUpdate);
-        socket.on('queue:completed', handleJobUpdate);
+        socket.on('queue:completed', handleOrderCompleted);
         socket.on('queue:failed', handleJobUpdate);
         socket.on('queue:cancelled', handleJobUpdate);
         socket.on('queue:status', handleJobUpdate);
-        socket.on('PRINT_JOB_STATUS_CHANGED', handleJobUpdate);
+        socket.on('job_status_update', (d: any) => {
+          if (d?.status === 'COMPLETED' || d?.status === 'Completed') {
+            handleOrderCompleted(d);
+          } else {
+            handleJobUpdate(d);
+          }
+        });
+        socket.on('PRINT_JOB_STATUS_CHANGED', (d: any) => {
+          if (d?.status === 'Completed' || d?.status === 'COMPLETED') {
+            handleOrderCompleted(d);
+          } else {
+            handleJobUpdate(d);
+          }
+        });
 
         return () => {
           isMounted = false;
+          socket.off('order_completed', handleOrderCompleted);
+          socket.off('job_completed', handleOrderCompleted);
           socket.off('queue:started', handleJobUpdate);
-          socket.off('queue:completed', handleJobUpdate);
+          socket.off('queue:completed', handleOrderCompleted);
           socket.off('queue:failed', handleJobUpdate);
           socket.off('queue:cancelled', handleJobUpdate);
           socket.off('queue:status', handleJobUpdate);
-          socket.off('PRINT_JOB_STATUS_CHANGED', handleJobUpdate);
+          socket.off('job_status_update');
+          socket.off('PRINT_JOB_STATUS_CHANGED');
         };
       }
     } catch {}
