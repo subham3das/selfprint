@@ -45,7 +45,8 @@ export const updatePrinterSettingsSchema = z.object({
   autoStartAfterPayment: z.boolean().optional(),
   doubleSidedDefault: z.boolean().optional(),
   paperSaveMode: z.boolean().optional(),
-  isPaused: z.boolean().optional()
+  isPaused: z.boolean().optional(),
+  testMode: z.boolean().optional()
 });
 
 export const updatePreferencesSettingsSchema = z.object({

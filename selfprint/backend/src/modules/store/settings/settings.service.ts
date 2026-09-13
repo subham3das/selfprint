@@ -163,16 +163,22 @@ export class SettingsService {
     const store = await this.repository.getStore(storeIdParam);
     if (!store) return null;
 
-    const isTestMode = input.testMode !== undefined ? Boolean(input.testMode) : undefined;
+    console.log(`[SettingsService:updatePrinterSettings] Store ${store._id} BEFORE SAVE -> Store.testMode:`, (store as any).testMode);
     
+    const isTestMode = input.testMode !== undefined ? Boolean(input.testMode) : undefined;
+
     // 1. Update StoreSettings model
-    await this.repository.updateStoreSettings(store._id, { printer: input });
+    const settingsDoc = await this.repository.updateStoreSettings(store._id, { printer: input });
 
     // 2. Persist in Store model directly
+    let updatedStore = store;
     if (isTestMode !== undefined) {
-      await this.repository.updateStore(store._id, { testMode: isTestMode });
+      const updated = await this.repository.updateStore(store._id, { testMode: isTestMode });
+      if (updated) updatedStore = updated;
       logger.info(`[TestMode] Store ${store._id} testMode successfully persisted in DB as ${isTestMode}`);
     }
+
+    console.log(`[SettingsService:updatePrinterSettings] Store ${store._id} AFTER SAVE -> Store.testMode:`, (updatedStore as any).testMode, 'StoreSettings.printer.testMode:', settingsDoc?.printer?.testMode);
 
     const full = await this.getFullSettings(storeIdParam);
 

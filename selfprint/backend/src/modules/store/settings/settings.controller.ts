@@ -39,6 +39,7 @@ export class SettingsController extends BaseController {
         ApiResponse.error(res, 'Store not found', HTTP_STATUS.NOT_FOUND);
         return;
       }
+      console.log(`[SettingsController:getFullSettings] Store ${storeId} -> testMode:`, settings.printer?.testMode);
       this.sendSuccess(res, 'Store settings retrieved', { settings });
     } catch (error) {
       next(error);
@@ -102,7 +103,9 @@ export class SettingsController extends BaseController {
   ): Promise<void> => {
     try {
       const storeId = this.getStoreId(req);
+      console.log(`[SettingsController:updatePrinterSettings] Request Body:`, req.body);
       const validated = updatePrinterSettingsSchema.parse(req.body);
+      console.log(`[SettingsController:updatePrinterSettings] Validated Payload:`, validated);
       const settings = await this.service.updatePrinterSettings(storeId, validated);
       this.sendSuccess(res, 'Printer settings updated', { settings });
     } catch (error) {
