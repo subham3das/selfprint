@@ -1,3 +1,4 @@
+import { runtimeService } from '../services/runtime.service';
 import mongoose from 'mongoose';
 import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
@@ -9,6 +10,7 @@ class SocketManager {
 
   public init(httpServer: HttpServer): SocketIOServer {
     this.io = new SocketIOServer(httpServer, {
+
       cors: {
         origin: (origin, callback) => {
           callback(null, true);
@@ -153,6 +155,13 @@ class SocketManager {
         };
         this.emitToStore(targetStore, 'connector:connected', connPayload);
         this.emitToStore(targetStore, 'connector_connected', connPayload);
+        runtimeService.handleConnectorOnline(targetStore, {
+          connectorId: data.connectorId,
+          version: data.version,
+          hostname: data.hostname,
+          printers: data.printers,
+          testMode: data.testMode
+        });
 
         // Transmit current persisted Store Test Mode directly to newly connected connector
         try {
@@ -185,6 +194,7 @@ class SocketManager {
         };
         this.emitToStore(storeId, 'connector:disconnected', offPayload);
         this.emitToStore(storeId, 'connector_disconnected', offPayload);
+        runtimeService.handleConnectorOffline(storeId, data);
       });
 
       socket.on('heartbeat', async (data: any) => {
@@ -608,6 +618,7 @@ class SocketManager {
     });
 
     this.isInitialized = true;
+    runtimeService.setSocketServer(this.io);
     logger.info('[Socket] 🚀 WebSocket & Socket.io server initialized successfully');
     return this.io;
   }

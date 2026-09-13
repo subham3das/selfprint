@@ -19,6 +19,7 @@ import { usePrinterMonitoring } from '../hooks/usePrinterMonitoring';
 import { useStoreDashboard } from '../hooks/useStoreDashboard';
 import { useStoreSettings } from '../hooks/useStoreSettings';
 import { useConnectorStore } from '../stores/useConnectorStore';
+import { useRuntimeStore } from '../stores/useRuntimeStore';
 import { printerService } from '../services/printer.service';
 import { JobItem, QueueTab, StoreInfo, SummaryBreakdown, PrinterStatusInfo, StatItem } from '../types/dashboard.types';
 
@@ -74,6 +75,7 @@ export const StoreDashboard: React.FC = () => {
 
   // Backend Live Dashboard Integration Hook (TanStack Query with 10s auto-refresh)
   const { settings: storeSettings } = useStoreSettings();
+    const runtime = useRuntimeStore();
   const { testMode: runtimeTestMode } = useConnectorStore();
   const {
     dashboardData,
@@ -184,7 +186,7 @@ export const StoreDashboard: React.FC = () => {
       }
     : emptyPrinterStatus;
 
-  const isTestMode = Boolean(runtimeTestMode || storeSettings?.printer?.testMode);
+  const isTestMode = Boolean(runtime.testMode || runtimeTestMode || storeSettings?.printer?.testMode);
 
   return (
     <div className="flex min-h-screen bg-[#F8FAFC] text-slate-900 font-sans antialiased">

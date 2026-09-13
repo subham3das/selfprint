@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { StoreInfo, SummaryBreakdown, PrinterStatusInfo } from '../types/dashboard.types';
-import { useConnectorStore } from '../stores/useConnectorStore';
+import { useRuntimeStore } from '../stores/useRuntimeStore';
 
 interface SidebarProps {
   activeNav: string;
@@ -56,7 +56,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
 
-  const { testMode: isTestMode } = useConnectorStore();
+  const runtime = useRuntimeStore();
+  const isTestMode = runtime.testMode;
 
   const isPrinterVirtual = Boolean(
     (printerStatus as any)?.isVirtual ||
