@@ -386,7 +386,7 @@ app.whenReady().then(async () => {
   createTray();
 
   if (mainWindow) {
-    autoUpdateService.init(mainWindow);
+    autoUpdateService.initialize(mainWindow);
   }
 
   app.on('activate', () => {

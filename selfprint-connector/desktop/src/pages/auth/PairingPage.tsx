@@ -173,7 +173,7 @@ export const PairingPage: React.FC = () => {
                 <span>OS &amp; Version:</span>
               </span>
               <span className="font-mono text-slate-200">
-                Windows • v{healthData?.connectorVersion || '1.0.1'}
+                Windows • v{healthData?.connectorVersion || '1.0.4'}
               </span>
             </div>
           </div>

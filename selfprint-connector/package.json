@@ -1,6 +1,6 @@
 {
   "name": "selfprint-connector",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "description": "Lightweight Windows background connector service for Self Print Cloud Platform",
   "main": "dist/app.js",
   "scripts": {

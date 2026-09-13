@@ -41,6 +41,11 @@ export class AutoUpdateService {
   };
 
   constructor() {
+    console.log('[Updater] Service Created');
+    console.log(`[Updater] app.isPackaged: ${app.isPackaged}`);
+    console.log(`[Updater] app.getVersion(): ${app.getVersion()}`);
+    console.log(`[Updater] autoUpdater.currentVersion.version: ${autoUpdater.currentVersion?.version || autoUpdater.currentVersion?.raw || app.getVersion()}`);
+
     this.setupAutoUpdater();
     this.registerIpcHandlers();
   }
@@ -52,33 +57,31 @@ export class AutoUpdateService {
     autoUpdater.allowDowngrade = false;
     autoUpdater.allowPrerelease = false;
 
-    // In development mode, mock update checking without throwing missing file errors
-    if (!app.isPackaged) {
-      autoUpdater.forceDevUpdateConfig = true;
-    }
+    // Force dev update config if running unpacked/dev to allow testing
+    autoUpdater.forceDevUpdateConfig = true;
 
-    // 1. Checking for update
+    // 1. checking-for-update
     autoUpdater.on('checking-for-update', () => {
       this.isChecking = true;
-      console.log('[Updater] Checking for updates');
+      console.log('[Updater] Checking for updates (checking-for-update event received)');
       this.updateStatus({
         state: 'CHECKING',
         error: undefined
       });
     });
 
-    // 2. Update available
+    // 2. update-available
     autoUpdater.on('update-available', (info: UpdateInfo) => {
       this.isChecking = false;
       this.isDownloading = true;
       const latestVer = info.version || 'unknown';
-      console.log(`[Updater] Update available v${latestVer}`);
+      console.log(`[Updater] Update available: v${latestVer}`);
 
       let notes = '';
       if (typeof info.releaseNotes === 'string') {
         notes = info.releaseNotes;
       } else if (Array.isArray(info.releaseNotes)) {
-        notes = info.releaseNotes.map((n) => (typeof n === 'string' ? n : n.note)).join('\n');
+        notes = info.releaseNotes.map((n) => (typeof n === 'string' ? n : (n as any).note)).join('\n');
       }
 
       this.updateStatus({
@@ -90,11 +93,11 @@ export class AutoUpdateService {
       });
     });
 
-    // 3. Update not available (Already latest version)
+    // 3. update-not-available
     autoUpdater.on('update-not-available', (info: UpdateInfo) => {
       this.isChecking = false;
       this.isDownloading = false;
-      console.log('[Updater] Already latest version');
+      console.log(`[Updater] Update not available. Already on latest version (v${info.version || app.getVersion()})`);
       this.updateStatus({
         state: 'UP_TO_DATE',
         latestVersion: info.version || app.getVersion(),
@@ -102,11 +105,11 @@ export class AutoUpdateService {
       });
     });
 
-    // 4. Download progress
+    // 4. download-progress
     autoUpdater.on('download-progress', (progressObj: ProgressInfo) => {
       this.isDownloading = true;
       const pct = Math.round(progressObj.percent);
-      console.log(`[Updater] Download ${pct}%`);
+      console.log(`[Updater] Download progress: ${pct}% (${progressObj.transferred}/${progressObj.total} bytes @ ${progressObj.bytesPerSecond} B/s)`);
       this.updateStatus({
         state: 'DOWNLOADING',
         progress: {
@@ -118,11 +121,11 @@ export class AutoUpdateService {
       });
     });
 
-    // 5. Update downloaded
+    // 5. update-downloaded
     autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
       this.isChecking = false;
       this.isDownloading = false;
-      console.log('[Updater] Download complete');
+      console.log(`[Updater] Download complete for v${info.version}. Ready to quit and install.`);
       this.updateStatus({
         state: 'DOWNLOADED',
         latestVersion: info.version,
@@ -135,15 +138,14 @@ export class AutoUpdateService {
       });
     });
 
-    // 6. Error handling (Never crash, log and update state)
+    // 6. error
     autoUpdater.on('error', (err: Error) => {
       this.isChecking = false;
       this.isDownloading = false;
-      const errMsg = err?.message || String(err);
-      console.error(`[Updater] Update failed: ${errMsg}`);
+      console.error('[Updater] AutoUpdater error event:', err?.stack || err?.message || err);
       this.updateStatus({
         state: 'ERROR',
-        error: errMsg
+        error: err?.message || String(err)
       });
     });
   }
@@ -175,62 +177,70 @@ export class AutoUpdateService {
     });
   }
 
-  public init(window: BrowserWindow): void {
+  public initialize(window: BrowserWindow): void {
+    console.log('[Updater] Initializing');
     this.window = window;
 
-    // Requirement 4: Wait until app is fully initialized (15 seconds) before checking
+    console.log('[Updater] Waiting 15 seconds');
     this.startupTimer = setTimeout(() => {
-      console.log('[Updater] Initial startup delay elapsed. Initiating automatic background update check...');
+      console.log('[Updater] 15 seconds elapsed. Starting startup update check...');
       this.checkForUpdates(false).catch((err) => {
-        console.warn('[Updater] Background startup update check failed silently:', err?.message || err);
+        console.error('[Updater] Error during startup update check:', err?.stack || err?.message || err);
       });
     }, 15000);
 
-    // Requirement 4: Check again every 6 hours (6 * 3600 * 1000 ms)
+    // Periodic check every 6 hours
     const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
     this.checkIntervalTimer = setInterval(() => {
-      console.log('[Updater] Periodic 6-hour interval check initiated...');
+      console.log('[Updater] Periodic 6-hour interval check triggered');
       this.checkForUpdates(false).catch((err) => {
-        console.warn('[Updater] Periodic update check failed silently:', err?.message || err);
+        console.error('[Updater] Error during periodic update check:', err?.stack || err?.message || err);
       });
     }, SIX_HOURS_MS);
   }
 
-  public async checkForUpdates(isManual = false): Promise<UpdateStatusPayload> {
+  // Backward-compat alias
+  public init(window: BrowserWindow): void {
+    this.initialize(window);
+  }
+
+  public async checkForUpdates(_isManual = false): Promise<UpdateStatusPayload> {
     if (this.isChecking || this.isDownloading) {
+      console.log('[Updater] Check or download already in progress. Skipping duplicate request.');
       return this.currentStatus;
     }
 
+    console.log('[Updater] Checking for updates');
+    console.log(`[Updater] Runtime Context -> isPackaged: ${app.isPackaged}, appVersion: ${app.getVersion()}, updaterVersion: ${autoUpdater.currentVersion?.version || autoUpdater.currentVersion?.raw}`);
+
     try {
       this.updateStatus({ state: 'CHECKING', error: undefined });
-      if (!app.isPackaged) {
-        // Mock graceful response in development mode
-        console.log('[Updater] Dev mode detected: Mocking update check.');
-        await new Promise((r) => setTimeout(r, 1200));
-        this.updateStatus({ state: 'UP_TO_DATE' });
-        console.log('[Updater] Already latest version');
-        return this.currentStatus;
-      }
-
-      await autoUpdater.checkForUpdates();
+      
+      // Execute autoUpdater.checkForUpdates() directly without skipping
+      const checkResult = await autoUpdater.checkForUpdates();
+      console.log('[Updater] checkForUpdates() promise resolved:', checkResult?.updateInfo?.version ? `Target version: v${checkResult.updateInfo.version}` : 'Check completed');
       return this.currentStatus;
     } catch (err: any) {
-      const errMsg = err?.message || 'Network error while checking for updates';
-      console.error(`[Updater] Update failed: ${errMsg}`);
+      console.error('[Updater] Complete error thrown from checkForUpdates():', {
+        name: err?.name,
+        message: err?.message,
+        stack: err?.stack,
+        cause: err?.cause
+      });
       this.updateStatus({
         state: 'ERROR',
-        error: errMsg
+        error: err?.message || 'Network error while checking for updates'
       });
       return this.currentStatus;
     }
   }
 
   public quitAndInstall(): void {
-    console.log('[Updater] Restarting to install');
+    console.log('[Updater] Restarting to install downloaded update...');
     try {
       autoUpdater.quitAndInstall(false, true);
     } catch (err) {
-      console.error('[Updater] Failed to quit and install:', err);
+      console.error('[Updater] Failed to quit and install update:', err);
     }
   }
 

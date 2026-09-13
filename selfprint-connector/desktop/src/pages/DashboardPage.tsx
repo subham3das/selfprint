@@ -693,7 +693,7 @@ export const DashboardPage: React.FC = () => {
         connectorId={health?.connectorId || 'local-connector'}
         machineId={health?.machineId || 'local-machine'}
         hostname={health?.hostname || 'DESKTOP-PRINT'}
-        version={health?.connectorVersion || '1.0.1'}
+        version={health?.connectorVersion || '1.0.4'}
         currentStoreName={pairedStoreName}
         onPairSuccess={(info) => {
           setPairedStoreName(info.storeName);

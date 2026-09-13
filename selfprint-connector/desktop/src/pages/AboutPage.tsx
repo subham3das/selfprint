@@ -27,7 +27,7 @@ export const AboutPage: React.FC = () => {
   const handleCopyDiagnostics = () => {
     const report = {
       timestamp: new Date().toISOString(),
-      connectorVersion: health?.connectorVersion || '1.0.1',
+      connectorVersion: health?.connectorVersion || '1.0.4',
       connectorId: health?.connectorId,
       machineId: health?.machineId,
       hostname: health?.hostname,
@@ -45,7 +45,7 @@ export const AboutPage: React.FC = () => {
   const handleExportDiagnostics = () => {
     const report = {
       timestamp: new Date().toISOString(),
-      connectorVersion: health?.connectorVersion || '1.0.1',
+      connectorVersion: health?.connectorVersion || '1.0.4',
       connectorId: health?.connectorId,
       machineId: health?.machineId,
       hostname: health?.hostname,
@@ -80,7 +80,7 @@ export const AboutPage: React.FC = () => {
       showToast('Checking for updates', 'Connecting to GitHub Releases...', 'info');
       await (window as any).electronAPI.checkForUpdates();
     } else {
-      showToast('Update Check', `You are running the latest release (v${health?.connectorVersion || '1.0.1'}).`, 'info');
+      showToast('Update Check', `You are running the latest release (v${health?.connectorVersion || '1.0.4'}).`, 'info');
     }
   };
 
@@ -104,7 +104,7 @@ export const AboutPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-slate-100">SelfPrint Connector</h1>
               <Badge variant="success" size="sm">
-                v{updateStatus.currentVersion || health?.connectorVersion || '1.0.1'}
+                v{updateStatus.currentVersion || health?.connectorVersion || '1.0.4'}
               </Badge>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">

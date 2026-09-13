@@ -56,7 +56,7 @@ export const Sidebar: React.FC = () => {
           />
           <div>
             <h2 className="text-xs font-bold text-slate-100 tracking-tight">SelfPrint</h2>
-            <p className="text-[10px] text-emerald-400 font-medium">Connector v1.0.1</p>
+            <p className="text-[10px] text-emerald-400 font-medium">Connector v1.0.4</p>
           </div>
         </div>
 

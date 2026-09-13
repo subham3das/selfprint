@@ -69,7 +69,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   theme: (localStorage.getItem('selfprint_theme') as 'dark' | 'light') || 'dark',
   updateStatus: {
     state: 'IDLE',
-    currentVersion: '1.0.1'
+    currentVersion: '1.0.4'
   },
   isUpdateModalOpen: false,
   setUpdateStatus: (status) => {
