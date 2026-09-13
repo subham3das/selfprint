@@ -1,6 +1,6 @@
 {
   "name": "selfprint-connector-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SelfPrint Hardware Connector & Spooler Daemon for Windows",
   "author": "SelfPrint Cloud Team",
   "private": true,

@@ -107,7 +107,7 @@ export class StoreAuthService {
     const connectorId = params.health?.connectorId || `SP-CONN-${Date.now().toString(36).toUpperCase()}`;
     const machineId = params.health?.machineId || `M-${Date.now()}`;
     const machineName = params.health?.hostname || 'SelfPrint Host';
-    const connectorVersion = params.health?.connectorVersion || '1.0.0';
+    const connectorVersion = params.health?.connectorVersion || '1.0.1';
 
     const payload = {
       pairingCode: cleanCode,

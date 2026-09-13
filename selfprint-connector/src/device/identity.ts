@@ -50,7 +50,7 @@ export function getDeviceIdentity(existingConnectorId?: string): DeviceIdentity 
     hostname,
     windowsUser,
     osVersion,
-    connectorVersion: '0.2.0'
+    connectorVersion: '1.0.1'
   };
 
   return cachedIdentity;

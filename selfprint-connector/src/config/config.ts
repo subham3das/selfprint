@@ -29,7 +29,7 @@ const DEFAULT_JSON_CONFIG: JsonConfigFile = {
   deviceId: '',
   deviceToken: '',
   storeId: '',
-  connectorVersion: '0.2.0'
+  connectorVersion: '1.0.1'
 };
 
 class ConfigManager {
@@ -81,7 +81,7 @@ class ConfigManager {
       deviceId: env.DEVICE_ID || jsonConfig.deviceId,
       deviceToken: env.DEVICE_TOKEN || jsonConfig.deviceToken,
       storeId: env.STORE_ID || jsonConfig.storeId,
-      connectorVersion: jsonConfig.connectorVersion || '0.1.0',
+      connectorVersion: jsonConfig.connectorVersion || '1.0.1',
       port: env.PORT,
       logLevel: env.LOG_LEVEL,
       heartbeatIntervalMs: env.HEARTBEAT_INTERVAL_MS,

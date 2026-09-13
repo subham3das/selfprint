@@ -2,7 +2,7 @@
   "connectorId": "cntr_d44f4051-a32a-401d-af78-6bfa6b3bf242",
   "machineId": "mach_8189c52071137cb4",
   "deviceToken": null,
-  "connectorVersion": "0.2.0",
+  "connectorVersion": "1.0.1",
   "lastHeartbeat": null,
   "connectorSettings": {
     "backendUrl": "https://selfprint.onrender.com",
