@@ -116,13 +116,7 @@ export const useStoreDashboard = (storeId?: string, selectedQueueTab: QueueTab =
       };
 
       // Register structured real-time events
-      socket.on('connector:connected', (d) => updateDashboardCache('connector:connected', d));
-      socket.on('connector:disconnected', (d) => updateDashboardCache('connector:disconnected', d));
-      socket.on('connector:heartbeat', (d) => updateDashboardCache('connector:heartbeat', d));
-      socket.on('connector:updated', (d) => updateDashboardCache('connector:updated', d));
-      socket.on('printer:updated', (d) => updateDashboardCache('printer:updated', d));
-      socket.on('printer:added', (d) => updateDashboardCache('printer:added', d));
-      socket.on('printer:removed', (d) => updateDashboardCache('printer:removed', d));
+      // Queue and general notifications
       socket.on('queue:created', (d) => updateDashboardCache('queue:created', d));
       socket.on('queue:started', (d) => updateDashboardCache('queue:started', d));
       socket.on('queue:completed', (d) => updateDashboardCache('queue:completed', d));
@@ -130,32 +124,15 @@ export const useStoreDashboard = (storeId?: string, selectedQueueTab: QueueTab =
       socket.on('queue:cancelled', (d) => updateDashboardCache('queue:cancelled', d));
       socket.on('queue:status', (d) => updateDashboardCache('queue:status', d));
       socket.on('notification:new', (d) => updateDashboardCache('notification:new', d));
+      socket.on('NEW_PRINT_JOB', (d) => updateDashboardCache('NEW_PRINT_JOB', d));
+      socket.on('queue_changed', (d) => updateDashboardCache('queue_changed', d));
+      socket.on('notification', (d) => updateDashboardCache('notification', d));
       socket.on('store:testModeChanged', () => {
         queryClient.invalidateQueries({ queryKey: ['store-dashboard', storeId] });
         queryClient.invalidateQueries({ queryKey: ['storeFullSettings'] });
       });
-      socket.on('test_mode_changed', () => {
-        queryClient.invalidateQueries({ queryKey: ['store-dashboard', storeId] });
-        queryClient.invalidateQueries({ queryKey: ['storeFullSettings'] });
-      });
-
-      // Legacy fallback listeners
-      socket.on('heartbeat', (d) => updateDashboardCache('heartbeat', d));
-      socket.on('connector_connected', (d) => updateDashboardCache('connector_connected', d));
-      socket.on('connector_disconnected', (d) => updateDashboardCache('connector_disconnected', d));
-      socket.on('printers_updated', (d) => updateDashboardCache('printers_updated', d));
-      socket.on('NEW_PRINT_JOB', (d) => updateDashboardCache('NEW_PRINT_JOB', d));
-      socket.on('queue_changed', (d) => updateDashboardCache('queue_changed', d));
-      socket.on('notification', (d) => updateDashboardCache('notification', d));
 
       return () => {
-        socket.off('connector:connected');
-        socket.off('connector:disconnected');
-        socket.off('connector:heartbeat');
-        socket.off('connector:updated');
-        socket.off('printer:updated');
-        socket.off('printer:added');
-        socket.off('printer:removed');
         socket.off('queue:created');
         socket.off('queue:started');
         socket.off('queue:completed');
@@ -163,16 +140,10 @@ export const useStoreDashboard = (storeId?: string, selectedQueueTab: QueueTab =
         socket.off('queue:cancelled');
         socket.off('queue:status');
         socket.off('notification:new');
-        socket.off('store:testModeChanged');
-        socket.off('test_mode_changed');
-
-        socket.off('heartbeat');
-        socket.off('connector_connected');
-        socket.off('connector_disconnected');
-        socket.off('printers_updated');
         socket.off('NEW_PRINT_JOB');
         socket.off('queue_changed');
         socket.off('notification');
+        socket.off('store:testModeChanged');
       };
     } catch (err) {
       console.error('[Dashboard] Socket setup error:', err);

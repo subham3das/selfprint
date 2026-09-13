@@ -83,8 +83,26 @@ export class DashboardService {
   /**
    * Map IPrinter to PrinterStatusDto
    */
-  private mapPrinterToDto(printer: IPrinter | null): PrinterStatusDto {
+  private mapPrinterToDto(printer: IPrinter | null, isTestMode: boolean = false): PrinterStatusDto {
     if (!printer) {
+      if (isTestMode) {
+        return {
+          id: 'virtual_selfprint_pdf_printer',
+          name: 'SelfPrint Virtual Printer',
+          model: 'Virtual PDF Printer (Test Mode)',
+          isOnline: true,
+          isConfigured: true,
+          connectionStatus: 'Connected',
+          printerStatus: 'Ready',
+          paperSize: 'A4',
+          tonerPercentage: 100,
+          paperPercentage: 100,
+          ipAddress: 'VIRTUAL',
+          isVirtual: true,
+          testMode: true
+        } as any;
+      }
+
       return {
         name: 'No printer configured',
         model: 'Not Configured',
@@ -308,7 +326,8 @@ export class DashboardService {
       ]);
 
     const summary = this.calculateSummary(todayJobs);
-    const printerDto = this.mapPrinterToDto(activePrinter);
+    const isTestMode = Boolean(store.testMode);
+    const printerDto = this.mapPrinterToDto(activePrinter, isTestMode);
     const recentQueue = recentQueueRes.jobs.map((j) => this.mapJobToDto(j));
     const activities = this.calculateActivities(recentQueueRes.jobs);
     const stockAlerts = this.calculateStockAlerts(activePrinter);

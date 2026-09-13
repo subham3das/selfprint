@@ -47,6 +47,11 @@ export const UserHeader: React.FC<UserHeaderProps> = ({ store, onBack }) => {
             />
             {store.isPrinterOnline ? 'Online' : 'Offline'}
           </span>
+          {(store as any).testMode && (
+            <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+              TEST MODE
+            </span>
+          )}
         </div>
       </div>
 

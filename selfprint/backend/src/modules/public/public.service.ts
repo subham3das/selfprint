@@ -112,20 +112,30 @@ export class PublicService {
     // 3. Load Store Settings, Printer, and Hardware Telemetry
     const settings = await StoreSettingsModel.findOne({ storeId: store._id }).lean();
     const printer = await PrinterModel.findOne({ storeId: store._id, isDefault: true }).lean();
+    const isTestMode = Boolean(store.testMode || settings?.printer?.testMode);
 
-    const isConnected = Boolean(printer && printer.status !== 'OFFLINE');
-    const isOnline = Boolean(printer && (printer.status === 'ONLINE' || printer.status === 'PRINTING'));
+    let isConnected = Boolean(printer && printer.status !== 'OFFLINE');
+    let isOnline = Boolean(printer && (printer.status === 'ONLINE' || printer.status === 'PRINTING'));
+    
+    // In Test Mode, printer is always treated as ready and online
+    if (isTestMode) {
+      isConnected = true;
+      isOnline = true;
+    }
+
     const isAcceptingPrints = isOnline;
 
     let hardwareState: 'READY' | 'OFFLINE' | 'NO_PRINTER' = 'READY';
-    let hardwareMessage = '🟢 Ready to Print';
+    let hardwareMessage = isTestMode ? '🧪 Test Mode Active (Virtual Printer Ready)' : '🟢 Ready to Print';
 
-    if (!store.printerConfigured || !printer) {
-      hardwareState = 'NO_PRINTER';
-      hardwareMessage = 'This print store has not configured a printer yet. Printing is currently unavailable.';
-    } else if (!isOnline) {
-      hardwareState = 'OFFLINE';
-      hardwareMessage = 'The printer at this store is currently offline. You can browse pricing, but printing will resume once the printer reconnects.';
+    if (!isTestMode) {
+      if (!store.printerConfigured || !printer) {
+        hardwareState = 'NO_PRINTER';
+        hardwareMessage = 'This print store has not configured a printer yet. Printing is currently unavailable.';
+      } else if (!isOnline) {
+        hardwareState = 'OFFLINE';
+        hardwareMessage = 'The printer at this store is currently offline. You can browse pricing, but printing will resume once the printer reconnects.';
+      }
     }
 
     const defaultPricing = {
@@ -179,6 +189,7 @@ export class PublicService {
           : '9:00 AM - 9:00 PM',
         upiId: `${storeCode.toLowerCase()}@upi`,
         isAcceptingPrints,
+        testMode: isTestMode,
         hardwareStatus: {
           state: hardwareState,
           message: hardwareMessage,
@@ -189,10 +200,14 @@ export class PublicService {
       printer: {
         connected: isConnected,
         online: isOnline,
-        printerName: printer?.printerName || (store.printerConfigured ? 'Store LaserJet' : 'No Printer Configured'),
+        printerName: isTestMode
+          ? (printer?.printerName || 'SelfPrint Virtual Printer')
+          : (printer?.printerName || (store.printerConfigured ? 'Store LaserJet' : 'No Printer Configured')),
         paperSize: 'A4',
-        supportsColor: printer?.capabilities?.isColor ?? true,
-        status: printer?.status || (store.printerConfigured ? 'ONLINE' : 'NOT_CONFIGURED')
+        supportsColor: isTestMode ? true : (printer?.capabilities?.isColor ?? true),
+        status: isTestMode ? 'ONLINE' : (printer?.status || (store.printerConfigured ? 'ONLINE' : 'NOT_CONFIGURED')),
+        isVirtual: isTestMode,
+        testMode: isTestMode
       },
       pricing: {
         ...finalPricing,

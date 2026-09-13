@@ -14,7 +14,7 @@ import {
 import { printerService } from '../../services/printer.service';
 import { useStoreSession } from '../../hooks/useStoreSession';
 import { useConnectorStore } from '../../stores/useConnectorStore';
-import { getSocket, joinStoreRoom } from '@/lib/socket';
+
 
 export const PrinterConnectorSettingsCard: React.FC = () => {
   const storeInfo = useStoreSession();
@@ -40,12 +40,7 @@ export const PrinterConnectorSettingsCard: React.FC = () => {
     manualRefresh,
     generatePairingCode: storeGenPairingCode,
     unpairConnector,
-    handleSocketHeartbeat,
-    handleSocketConnected,
-    handleSocketDisconnected,
-    handleSocketPaired,
-    handleSocketUnpaired,
-    handlePrintersUpdated,
+    
     decrementCountdown
   } = useConnectorStore();
 
@@ -90,69 +85,7 @@ export const PrinterConnectorSettingsCard: React.FC = () => {
     }
   }, [storeId, unpairConnector, handleGenerateCode]);
 
-  // Pure WebSocket In-Memory Event Handlers
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-
-    if (storeId) {
-      joinStoreRoom(storeId);
-    }
-
-    const onHeartbeat = (d: any) => handleSocketHeartbeat(d);
-    const onConnected = (d: any) => handleSocketConnected(d);
-    const onDisconnected = (d: any) => handleSocketDisconnected(d);
-    const onPaired = (d: any) => {
-      handleSocketPaired(d);
-      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
-    };
-    const onUnpaired = () => handleSocketUnpaired();
-    const onPrinters = (data: any) => {
-      const raw = Array.isArray(data?.printers) ? data.printers : (Array.isArray(data) ? data : []);
-      handlePrintersUpdated(raw);
-    };
-
-    socket.on('connector:heartbeat', onHeartbeat);
-    socket.on('connector:connected', onConnected);
-    socket.on('connector:disconnected', onDisconnected);
-    socket.on('connector:updated', onConnected);
-    socket.on('connector:paired', onPaired);
-    socket.on('connector:unpaired', onUnpaired);
-    socket.on('printer:updated', onPrinters);
-
-    // Fallbacks
-    socket.on('heartbeat', onHeartbeat);
-    socket.on('connector_connected', onConnected);
-    socket.on('connector_disconnected', onDisconnected);
-    socket.on('connector_paired', onPaired);
-    socket.on('connector_unpaired', onUnpaired);
-    socket.on('printers_updated', onPrinters);
-
-    return () => {
-      socket.off('connector:heartbeat', onHeartbeat);
-      socket.off('connector:connected', onConnected);
-      socket.off('connector:disconnected', onDisconnected);
-      socket.off('connector:updated', onConnected);
-      socket.off('connector:paired', onPaired);
-      socket.off('connector:unpaired', onUnpaired);
-      socket.off('printer:updated', onPrinters);
-
-      socket.off('heartbeat', onHeartbeat);
-      socket.off('connector_connected', onConnected);
-      socket.off('connector_disconnected', onDisconnected);
-      socket.off('connector_paired', onPaired);
-      socket.off('connector_unpaired', onUnpaired);
-      socket.off('printers_updated', onPrinters);
-    };
-  }, [
-    storeId,
-    handleSocketHeartbeat,
-    handleSocketConnected,
-    handleSocketDisconnected,
-    handleSocketPaired,
-    handleSocketUnpaired,
-    handlePrintersUpdated
-  ]);
+  // Socket events handled centrally by useConnectorStore
 
   useEffect(() => {
     return () => {

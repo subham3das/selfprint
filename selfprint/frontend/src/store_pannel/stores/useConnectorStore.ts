@@ -1,7 +1,10 @@
 import { useSyncExternalStore } from 'react';
 import { printerService } from '../services/printer.service';
+import { getSocket } from '@/lib/socket';
+import { storeAuthService } from '../services/storeAuth.service';
 
 export type ConnectorWizardState =
+  | 'UNKNOWN'
   | 'NOT_INSTALLED'
   | 'INSTALLED_NOT_RUNNING'
   | 'RUNNING_UNPAIRED'
@@ -15,8 +18,10 @@ export interface ConnectorStoreData {
   // Core Connector Telemetry State
   paired: boolean;
   isOnline: boolean;
-  status: 'ONLINE' | 'OFFLINE';
+  status: 'ONLINE' | 'OFFLINE' | 'UNKNOWN';
   state: ConnectorWizardState | string;
+  connectorId: string | null;
+  storeId: string | null;
   storeName: string | null;
   hostname: string | null;
   machineId?: string;
@@ -46,8 +51,10 @@ const HEARTBEAT_TIMEOUT_MS = 30_000; // 30 seconds watchdog
 let state: ConnectorStoreData = {
   paired: false,
   isOnline: false,
-  status: 'OFFLINE',
-  state: 'NOT_PAIRED',
+  status: 'UNKNOWN',
+  state: 'UNKNOWN',
+  connectorId: null,
+  storeId: null,
   storeName: null,
   hostname: null,
   machineId: undefined,
@@ -58,7 +65,7 @@ let state: ConnectorStoreData = {
   physicalPrinterCount: 0,
   lastHeartbeat: null,
   lastHeartbeatTimestamp: null,
-  diffSeconds: 999,
+  diffSeconds: 0,
 
   isHydrated: false,
   isCheckingStatus: false,
@@ -82,6 +89,20 @@ function updateState(updater: Partial<ConnectorStoreData> | ((prev: ConnectorSto
   emitChange();
 }
 
+/**
+ * Validates whether an incoming socket payload belongs to the active Store / Connector
+ */
+function isPayloadRelevant(payload: any): boolean {
+  const activeStoreId = state.storeId || storeAuthService.getStoreId() || localStorage.getItem('selfprint_store_id');
+  if (payload?.storeId && activeStoreId && payload.storeId !== activeStoreId && payload.storeId !== 'default') {
+    return false;
+  }
+  if (state.connectorId && payload?.connectorId && payload.connectorId !== state.connectorId) {
+    return false;
+  }
+  return true;
+}
+
 export const connectorStoreActions = {
   getState: () => state,
 
@@ -89,27 +110,30 @@ export const connectorStoreActions = {
    * Initial page load or reconnection recovery REST sync
    */
   hydrate: async (storeId?: string, force = false) => {
+    const currentStoreId = storeId || storeAuthService.getStoreId() || localStorage.getItem('selfprint_store_id') || undefined;
     if (state.isHydrated && !force && state.isCheckingStatus) return;
 
-    updateState({ isCheckingStatus: true, lastSyncError: null });
+    updateState({ isCheckingStatus: true, lastSyncError: null, storeId: currentStoreId || null });
     try {
-      const res = await printerService.getConnectorStatus(storeId);
+      const res = await printerService.getConnectorStatus(currentStoreId);
       const raw = res.connector;
       const hbTime = res.lastHeartbeat ? new Date(res.lastHeartbeat).getTime() : null;
       const diffMs = hbTime ? Math.max(0, Date.now() - hbTime) : 999999;
       const diffSec = Math.round(diffMs / 1000);
 
-      const isReallyOnline = Boolean(
-        res.isOnline ||
-        (res.paired && hbTime && diffMs < HEARTBEAT_TIMEOUT_MS)
-      );
+      const isReallyOnline = Boolean(res.paired && res.isOnline && diffSec <= 35);
+      const rawPrinters = Array.isArray(res.physicalPrinters)
+        ? res.physicalPrinters
+        : (Array.isArray(raw?.physicalPrinters) ? raw.physicalPrinters : []);
+      const count = rawPrinters.length;
 
-      const rawPrinters = Array.isArray(res.physicalPrinters) ? res.physicalPrinters : [];
-      const count = typeof res.physicalPrinterCount === 'number' ? res.physicalPrinterCount : rawPrinters.length;
-
-      let determinedState: ConnectorWizardState | string = 'RUNNING_UNPAIRED';
-      if (res.paired && isReallyOnline) {
-        determinedState = count > 0 ? 'READY' : 'CONNECTED';
+      let determinedState: ConnectorWizardState = 'NOT_INSTALLED';
+      if (!res.paired) {
+        determinedState = 'NOT_INSTALLED';
+      } else if (isReallyOnline && count > 0) {
+        determinedState = 'READY';
+      } else if (isReallyOnline) {
+        determinedState = 'CONNECTED';
       } else if (res.paired && !isReallyOnline) {
         determinedState = 'INSTALLED_NOT_RUNNING';
       }
@@ -117,8 +141,10 @@ export const connectorStoreActions = {
       updateState({
         paired: res.paired,
         isOnline: isReallyOnline,
-        status: isReallyOnline ? 'ONLINE' : 'OFFLINE',
+        status: isReallyOnline ? 'ONLINE' : (res.paired ? 'OFFLINE' : 'UNKNOWN'),
         state: determinedState,
+        connectorId: (res as any)?.connectorId || raw?.connectorId || state.connectorId,
+        storeId: currentStoreId || state.storeId,
         storeName: raw?.storeName || null,
         hostname: raw?.hostname || res.machineName || null,
         machineId: raw?.machineId,
@@ -208,10 +234,16 @@ export const connectorStoreActions = {
 
   /**
    * Pure WebSocket In-Memory Mutator: connector:heartbeat
-   * Optimistically updates heartbeat timestamp and marks online with zero REST calls.
+   * Deduplicates by storeId, connectorId, and timestamp.
    */
   handleSocketHeartbeat: (payload: any) => {
-    const now = Date.now();
+    if (!isPayloadRelevant(payload)) return;
+
+    const hbTimestamp = payload?.timestamp ? new Date(payload.timestamp).getTime() : Date.now();
+    if (state.lastHeartbeatTimestamp && hbTimestamp < state.lastHeartbeatTimestamp) {
+      return; // Ignore stale or out-of-order heartbeat
+    }
+
     const printers = Array.isArray(payload?.printers)
       ? payload.printers
       : (Array.isArray(payload?.physicalPrinters) ? payload.physicalPrinters : null);
@@ -229,14 +261,15 @@ export const connectorStoreActions = {
         isOnline: true,
         status: 'ONLINE',
         state: prev.state === 'PAIRING' ? 'PAIRING' : nextState,
+        connectorId: payload?.connectorId || prev.connectorId,
         hostname: payload?.hostname || payload?.machineName || prev.hostname,
         socketConnected: true,
         authenticated: true,
         hostRunning: true,
         physicalPrinters: updatedPrinters,
         physicalPrinterCount: count,
-        lastHeartbeat: payload?.timestamp || payload?.lastHeartbeat || new Date(now).toISOString(),
-        lastHeartbeatTimestamp: now,
+        lastHeartbeat: payload?.timestamp || payload?.lastHeartbeat || new Date(hbTimestamp).toISOString(),
+        lastHeartbeatTimestamp: hbTimestamp,
         diffSeconds: 0
       };
     });
@@ -246,12 +279,15 @@ export const connectorStoreActions = {
    * Pure WebSocket In-Memory Mutator: connector:connected
    */
   handleSocketConnected: (payload: any) => {
+    if (!isPayloadRelevant(payload)) return;
     const now = Date.now();
+
     updateState((prev) => ({
       paired: true,
       isOnline: true,
       status: 'ONLINE',
       state: prev.physicalPrinterCount > 0 ? 'READY' : 'CONNECTED',
+      connectorId: payload?.connectorId || prev.connectorId,
       hostname: payload?.hostname || prev.hostname,
       socketConnected: true,
       authenticated: true,
@@ -264,7 +300,9 @@ export const connectorStoreActions = {
   /**
    * Pure WebSocket In-Memory Mutator: connector:disconnected
    */
-  handleSocketDisconnected: (_payload: any) => {
+  handleSocketDisconnected: (payload: any) => {
+    if (!isPayloadRelevant(payload)) return;
+
     updateState((prev) => ({
       isOnline: false,
       status: 'OFFLINE',
@@ -278,13 +316,16 @@ export const connectorStoreActions = {
    * Pure WebSocket In-Memory Mutator: connector:paired
    */
   handleSocketPaired: (payload: any) => {
+    if (!isPayloadRelevant(payload)) return;
     const now = Date.now();
+
     updateState({
       paired: true,
       isOnline: true,
       status: 'ONLINE',
       state: 'CONNECTED',
       pairingCode: null,
+      connectorId: payload?.connectorId || state.connectorId,
       hostname: payload?.hostname || null,
       socketConnected: true,
       authenticated: true,
@@ -297,12 +338,15 @@ export const connectorStoreActions = {
   /**
    * Pure WebSocket In-Memory Mutator: connector:unpaired
    */
-  handleSocketUnpaired: () => {
+  handleSocketUnpaired: (payload?: any) => {
+    if (payload && !isPayloadRelevant(payload)) return;
+
     updateState({
       paired: false,
       isOnline: false,
       status: 'OFFLINE',
       state: 'RUNNING_UNPAIRED',
+      connectorId: null,
       hostname: null,
       machineId: undefined,
       socketConnected: false,
@@ -319,8 +363,17 @@ export const connectorStoreActions = {
 
   /**
    * Pure WebSocket In-Memory Mutator: printer:updated
+   * Deduplicates identical printer payloads
    */
-  handlePrintersUpdated: (printers: any[]) => {
+  handlePrintersUpdated: (printers: any[], payload?: any) => {
+    if (payload && !isPayloadRelevant(payload)) return;
+
+    const currentJson = JSON.stringify(state.physicalPrinters.map((p) => ({ id: p.id || p.name, status: p.status, isOnline: p.isOnline })));
+    const nextJson = JSON.stringify(printers.map((p) => ({ id: p.id || p.name, status: p.status, isOnline: p.isOnline })));
+    if (currentJson === nextJson && state.physicalPrinters.length === printers.length) {
+      return; // Ignore duplicate identical update
+    }
+
     const count = printers.length;
     updateState((prev) => ({
       physicalPrinters: printers,
@@ -380,6 +433,47 @@ useConnectorStore.getState = () => ({
   ...connectorStoreActions
 });
 useConnectorStore.actions = connectorStoreActions;
+
+// Global Singleton Socket Listener Registration (Registered ONCE across the entire app)
+let isSocketSubscribed = false;
+
+export function initConnectorSocketListener() {
+  if (isSocketSubscribed || typeof window === 'undefined') return;
+  isSocketSubscribed = true;
+
+  try {
+    const socket = getSocket();
+    if (!socket) return;
+
+    socket.on('connector:heartbeat', (d: any) => connectorStoreActions.handleSocketHeartbeat(d));
+    socket.on('heartbeat', (d: any) => connectorStoreActions.handleSocketHeartbeat(d));
+    socket.on('connector:connected', (d: any) => connectorStoreActions.handleSocketConnected(d));
+    socket.on('connector_connected', (d: any) => connectorStoreActions.handleSocketConnected(d));
+    socket.on('connector:disconnected', (d: any) => connectorStoreActions.handleSocketDisconnected(d));
+    socket.on('connector_disconnected', (d: any) => connectorStoreActions.handleSocketDisconnected(d));
+    socket.on('connector:paired', (d: any) => connectorStoreActions.handleSocketPaired(d));
+    socket.on('connector_paired', (d: any) => connectorStoreActions.handleSocketPaired(d));
+    socket.on('connector:unpaired', (d: any) => connectorStoreActions.handleSocketUnpaired(d));
+    socket.on('connector_unpaired', (d: any) => connectorStoreActions.handleSocketUnpaired(d));
+    socket.on('printer:updated', (d: any) => {
+      const raw = Array.isArray(d?.printers) ? d.printers : (Array.isArray(d) ? d : []);
+      connectorStoreActions.handlePrintersUpdated(raw, d);
+    });
+    socket.on('printers_updated', (d: any) => {
+      const raw = Array.isArray(d?.printers) ? d.printers : (Array.isArray(d) ? d : []);
+      connectorStoreActions.handlePrintersUpdated(raw, d);
+    });
+
+    console.log('[useConnectorStore] Global socket listeners initialized once.');
+  } catch (err) {
+    console.error('[useConnectorStore] Socket init error:', err);
+  }
+}
+
+// Auto-initialize socket listeners in browser
+if (typeof window !== 'undefined') {
+  initConnectorSocketListener();
+}
 
 // Global Watchdog Singleton
 let watchdogInterval: NodeJS.Timeout | null = null;

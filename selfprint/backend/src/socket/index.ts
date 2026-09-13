@@ -490,7 +490,6 @@ class SocketManager {
       logger.info(`[Socket] 📡 Emitting event "${event}" to store:${storeId} and admin`);
       this.io.to(`store:${storeId}`).emit(event, data);
       this.io.to('admin').emit(event, data);
-      this.io.emit(event, data);
     }
   }
 

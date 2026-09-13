@@ -46,12 +46,26 @@ export class WindowsPrinterDetector implements IPrinterDetector {
         }
       }
 
-      // If Test Mode is ON and no physical or OS printer exists, auto-inject SelfPrint Virtual Printer
-      if (isTestMode && printerMap.size === 0) {
-        const virtualPrinter = createSelfPrintVirtualPrinter();
-        printerMap.set(virtualPrinter.id, virtualPrinter);
-        logger.info('[VirtualPrinter] Created');
-        logger.info(`[TestMode] Virtual printer detected: ${virtualPrinter.name}`);
+      // If Test Mode is ON:
+      // 1. If Microsoft Print to PDF exists, ensure it has isVirtual: true, isTestMode: true, isOnline: true
+      // 2. If no virtual printer or physical printer exists, auto-inject SelfPrint Virtual Printer
+      if (isTestMode) {
+        let hasVirtual = false;
+        for (const p of printerMap.values()) {
+          if (p.isVirtual || p.name.toLowerCase().includes('pdf') || p.name.toLowerCase().includes('xps')) {
+            p.isVirtual = true;
+            p.isTestMode = true;
+            p.status = 'ONLINE';
+            p.isOnline = true;
+            hasVirtual = true;
+          }
+        }
+        if (!hasVirtual || printerMap.size === 0) {
+          const virtualPrinter = createSelfPrintVirtualPrinter();
+          printerMap.set(virtualPrinter.id, virtualPrinter);
+          logger.info('[VirtualPrinter] Created');
+          logger.info(`[TestMode] Virtual printer active: ${virtualPrinter.name}`);
+        }
       }
 
       const printers = Array.from(printerMap.values());

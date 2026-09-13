@@ -12,6 +12,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { StoreInfo, NotificationItem } from '../types/dashboard.types';
 import { ConnectionState, RealtimeConnectionState } from '../hooks/usePrinterMonitoring';
+import { useConnectorStore } from '../stores/useConnectorStore';
 
 interface HeaderProps {
   title?: string;
@@ -48,9 +49,13 @@ export const Header: React.FC<HeaderProps> = ({
   const activeNotifications = notificationsList || [];
 
   // Live Status Indicator determination (instantly updated via Socket.IO & Backend)
+  const { isOnline: storeConnectorOnline, state: storeConnectorState } = useConnectorStore();
+
+  // Live Status Indicator determination (instantly updated via Socket.IO & Backend)
   const getLiveIndicator = () => {
-    const state: ConnectionState = connectionState || (isPrinterOnline ? 'CONNECTED' : 'OFFLINE');
-    switch (state) {
+    const effectiveOnline = connectionState ? (connectionState === 'CONNECTED' || connectionState === 'READY') : (storeConnectorOnline || isPrinterOnline);
+    const effectiveState: ConnectionState = connectionState || (storeConnectorState as ConnectionState) || (effectiveOnline ? 'CONNECTED' : 'OFFLINE');
+    switch (effectiveState) {
       case 'CONNECTED':
       case 'READY':
       case 'HOST_RUNNING':

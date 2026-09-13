@@ -44,7 +44,6 @@ export const usePrinterDetection = (options?: {
   const {
     paired,
     isOnline,
-    status,
     state: storeState,
     hostname,
     socketConnected,
@@ -84,7 +83,7 @@ export const usePrinterDetection = (options?: {
     storeId: storeId || null,
     machineName: hostname,
     physicalPrinterCount,
-    status,
+    status: isOnline ? 'ONLINE' : 'OFFLINE',
     state: storeState
   };
 
