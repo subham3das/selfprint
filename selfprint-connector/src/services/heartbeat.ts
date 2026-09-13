@@ -1,4 +1,4 @@
-import { connectorStore } from '../storage/connectorStore';
+﻿import { connectorStore } from '../storage/connectorStore';
 import { logger } from '../utils/logger';
 import { emitEvent, isSocketConnected } from '../websocket/socket';
 import { printerCache } from '../printer/printerCache';
@@ -13,8 +13,6 @@ let heartbeatTimer: NodeJS.Timeout | null = null;
 export async function sendHeartbeat(): Promise<void> {
   const data = connectorStore.getData();
   const identity = connectorStore.getIdentity();
-
-
 
   const health = (await healthMonitor.collectHealthMetrics()) || {
     cpuUsagePercent: 0,
@@ -42,8 +40,9 @@ export async function sendHeartbeat(): Promise<void> {
     socketConnected,
     authenticated,
     hostRunning: true,
-    physicalPrinters: physicalPrinterCount,
+    physicalPrinters: physicalPrinters,
     physicalPrinterCount,
+    printers: physicalPrinters,
     machineId: data.machineId,
     version: identity.connectorVersion,
     connectorVersion: identity.connectorVersion,
@@ -63,8 +62,8 @@ export async function sendHeartbeat(): Promise<void> {
     timestamp: new Date().toISOString()
   };
 
-  // 1. Log structured lifecycle: Heartbeat sent
-  logger.info(`[Heartbeat] Dispatched heartbeat (state: ${payload.state}, authenticated: ${authenticated}, socket: ${socketConnected}, printers: ${physicalPrinterCount})`);
+  // Structured lifecycle logging
+  logger.info(`[Heartbeat] Dispatched heartbeat: state=${payload.state}, auth=${authenticated}, socket=${socketConnected}, physicalPrinters=${physicalPrinterCount} (${JSON.stringify(physicalPrinters.map(p => p.name))})`);
 
   // 2. Emit via WebSocket
   const wsSent = emitEvent('heartbeat', {

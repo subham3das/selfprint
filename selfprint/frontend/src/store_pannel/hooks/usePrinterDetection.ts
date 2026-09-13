@@ -220,11 +220,13 @@ export const usePrinterDetection = (options?: {
     };
 
     const handlePrintersUpdated = (data: any) => {
-      if (Array.isArray(data?.printers)) {
-        setDetectedPrinters(data.printers);
-        if (data.printers.length > 0) {
-          setConnectorState('READY');
-        }
+      const raw = Array.isArray(data?.printers) ? data.printers : [];
+      setDetectedPrinters(raw);
+      if (raw.length > 0) {
+        setConnectorState('READY');
+      } else {
+        setConnectorState('CONNECTED');
+        setSelectedPrinter(null);
       }
       refreshConnectorStatus();
     };
@@ -310,6 +312,8 @@ export const usePrinterDetection = (options?: {
         setSelectedPrinter(printers[0]);
         setCurrentStep('Selection');
       } else {
+        setConnectorState('CONNECTED');
+        setSelectedPrinter(null);
         setCurrentError('NoPrinterFound');
         setCurrentStep('Error');
       }
@@ -321,6 +325,8 @@ export const usePrinterDetection = (options?: {
       const errType = (err.message === 'NoPhysicalPrinterDetected' || err.message === 'NoPrinterFound')
         ? 'NoPhysicalPrinterDetected'
         : 'HostServiceRequired';
+      setDetectedPrinters([]);
+      setSelectedPrinter(null);
       setCurrentError(errType);
       setCurrentStep('Error');
     }

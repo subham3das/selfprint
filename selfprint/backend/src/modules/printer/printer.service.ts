@@ -1,10 +1,12 @@
-import mongoose from 'mongoose';
+﻿import mongoose from 'mongoose';
 import { printerRepository, PrinterRepository } from './printer.repository';
 import { SavePrinterDto, PairHostDto, HostHeartbeatDto, PrinterResponseDto } from './printer.types';
 import { PrinterModel, IPrinter, PrinterStatusType } from '../../models/printer.model';
 import { HostModel } from '../../models/host.model';
 import { StoreModel } from '../../models/store.model';
+import { ConnectorModel } from '../../models/connector.model';
 import { socketManager } from '../../socket';
+import { logger } from '../../utils';
 import { NotFoundError } from '../../errors';
 
 export class PrinterService {
@@ -112,47 +114,59 @@ export class PrinterService {
     }
 
     const sId = new mongoose.Types.ObjectId(targetStoreId);
+    const validPrinters = Array.isArray(rawPrinters) ? rawPrinters : [];
     const syncedPrinters: IPrinter[] = [];
 
-    for (let i = 0; i < (rawPrinters || []).length; i++) {
-      const p = rawPrinters[i];
-      const printerName = p.name || p.printerName;
-      if (!printerName) continue;
+    // If 0 printers detected on the host machine, mark any previous store printers as OFFLINE
+    if (validPrinters.length === 0) {
+      await PrinterModel.updateMany({ storeId: sId }, { $set: { status: 'OFFLINE' } });
+      await ConnectorModel.updateMany({ storeId: sId }, { $set: { connectedPrinters: 0, physicalPrinters: [] } });
+    } else {
+      for (let i = 0; i < validPrinters.length; i++) {
+        const p = validPrinters[i];
+        const printerName = p.name || p.printerName;
+        if (!printerName) continue;
 
-      const deviceId = p.id || p.deviceId || `prn_${printerName}`;
-      const isDefault = p.isDefault ?? (i === 0);
+        const deviceId = p.id || p.deviceId || `prn_${printerName}`;
+        const isDefault = p.isDefault ?? (i === 0);
 
-      const saved = await PrinterModel.findOneAndUpdate(
-        { storeId: sId, $or: [{ deviceId }, { printerName }] },
-        {
-          $set: {
-            storeId: sId,
-            deviceId,
-            printerName,
-            model: p.model || printerName,
-            brand: p.brand || p.manufacturer || 'Generic',
-            driver: p.driver || p.driverName || 'Generic Driver',
-            port: p.port || p.portName || 'USB001',
-            connectionType: (p.connectionType || p.connection || 'USB').toUpperCase(),
-            status: p.status === 'Offline' ? 'OFFLINE' : 'ONLINE',
-            isDefault,
-            paperLevel: p.paperLevel ?? 90,
-            tonerLevel: typeof p.inkLevels?.black === 'number' ? p.inkLevels.black : (p.tonerLevel ?? 85),
-            capabilities: {
-              isColor: Boolean(p.isColor || p.colorSupport),
-              isDuplex: Boolean(p.isDuplexSupported || p.duplexSupport),
-              isAutoCut: Boolean(p.isAutoCutSupported),
-              paperSizes: Array.isArray(p.paperSizes) ? p.paperSizes : ['A4', 'Letter']
-            },
-            lastHeartbeat: new Date(),
-            lastSeen: new Date()
-          }
-        },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-      if (saved) {
-        syncedPrinters.push(saved);
+        const saved = await PrinterModel.findOneAndUpdate(
+          { storeId: sId, $or: [{ deviceId }, { printerName }] },
+          {
+            $set: {
+              storeId: sId,
+              deviceId,
+              printerName,
+              model: p.model || printerName,
+              brand: p.brand || p.manufacturer || 'Generic',
+              driver: p.driver || p.driverName || 'Generic Driver',
+              port: p.port || p.portName || 'USB001',
+              connectionType: (p.connectionType || p.connection || 'USB').toUpperCase(),
+              status: p.status === 'Offline' ? 'OFFLINE' : 'ONLINE',
+              isDefault,
+              paperLevel: p.paperLevel ?? 90,
+              tonerLevel: typeof p.inkLevels?.black === 'number' ? p.inkLevels.black : (p.tonerLevel ?? 85),
+              capabilities: {
+                isColor: Boolean(p.isColor || p.colorSupport),
+                isDuplex: Boolean(p.isDuplexSupported || p.duplexSupport),
+                isAutoCut: Boolean(p.isAutoCutSupported),
+                paperSizes: Array.isArray(p.paperSizes) ? p.paperSizes : ['A4', 'Letter']
+              },
+              lastHeartbeat: new Date(),
+              lastSeen: new Date()
+            }
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+        if (saved) {
+          syncedPrinters.push(saved);
+        }
       }
+
+      await ConnectorModel.updateMany(
+        { storeId: sId },
+        { $set: { connectedPrinters: syncedPrinters.length, physicalPrinters: validPrinters } }
+      );
     }
 
     if (syncedPrinters.length > 0) {
@@ -162,6 +176,8 @@ export class PrinterService {
     }
 
     const formatted = syncedPrinters.map(p => this.formatPrinterDto(p));
+
+    logger.info(`[Printer Sync API] Store ${targetStoreId} -> synchronized ${formatted.length} physical printer(s)`);
 
     // Realtime Socket.IO Broadcast to Store Dashboard
     socketManager.emitToStore(targetStoreId, 'printer_synced', {
@@ -173,17 +189,18 @@ export class PrinterService {
       timestamp: new Date().toISOString()
     });
 
+    socketManager.emitToStore(targetStoreId, 'printers_updated', {
+      connectorId,
+      storeId: targetStoreId,
+      printers: validPrinters,
+      count: validPrinters.length,
+      timestamp: new Date().toISOString()
+    });
+
     socketManager.emitToStore(targetStoreId, 'connector_status', {
       status: 'Ready',
       connectorId,
       printerCount: formatted.length,
-      timestamp: new Date().toISOString()
-    });
-
-    socketManager.emitToStore(targetStoreId, 'printer_notification', {
-      type: 'success',
-      title: 'Connector Online',
-      message: `Synchronized ${formatted.length} physical printer(s) from local Windows connector.`,
       timestamp: new Date().toISOString()
     });
 

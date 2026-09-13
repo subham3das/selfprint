@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+﻿import { Request, Response } from 'express';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { PairingCodeModel } from '../../models/pairingCode.model';
@@ -160,7 +160,7 @@ export class ConnectorController {
 
       if (targetStoreId && codeRecord.storeId.toString() !== targetStoreId.toString()) {
         logger.warn(
-          `🚫 Pairing Code Store Mismatch: Code ${cleanCode} belongs to Store ${codeRecord.storeId}, but authenticated user requested Store ${targetStoreId}`
+          `Pairing Code Store Mismatch: Code ${cleanCode} belongs to Store ${codeRecord.storeId}, but authenticated user requested Store ${targetStoreId}`
         );
         res.status(403).json({
           success: false,
@@ -182,7 +182,7 @@ export class ConnectorController {
         const ownerStore = await StoreModel.findById(existingConnector.storeId);
         const ownerStoreName = ownerStore?.name || existingConnector.storeName || 'another store';
         logger.warn(
-          `🚫 Ownership Conflict: Connector ${connectorId} is already owned by "${ownerStoreName}" (${existingConnector.storeId}). Rejected pairing with Store ${codeRecord.storeId}`
+          `Ownership Conflict: Connector ${connectorId} is already owned by "${ownerStoreName}" (${existingConnector.storeId}). Rejected pairing with Store ${codeRecord.storeId}`
         );
         res.status(403).json({
           success: false,
@@ -229,7 +229,9 @@ export class ConnectorController {
           pairedAt: new Date(),
           hostRunning: true,
           authenticated: true,
-          paired: true
+          paired: true,
+          connectedPrinters: 0,
+          physicalPrinters: []
         },
         { upsert: true, new: true }
       );
@@ -353,9 +355,11 @@ export class ConnectorController {
             storeId,
             machineName: null,
             physicalPrinterCount: 0,
+            physicalPrinters: [],
             connectionState: 'RUNNING_UNPAIRED',
             state: 'NOT_PAIRED',
-            status: 'OFFLINE'
+            status: 'OFFLINE',
+            printerCount: 0
           }
         });
         return;
@@ -366,7 +370,14 @@ export class ConnectorController {
       const isAlive = diffMs < 35000;
       const effectiveStatus = isAlive ? connector.status : 'OFFLINE';
       const effectiveState = isAlive ? (connector.state || 'READY') : 'OFFLINE';
-      const printerCount = connector.connectedPrinters || (connector.physicalPrinters ? connector.physicalPrinters.length : 0);
+
+      // Extract physical printers strictly as array and compute exact count
+      const rawPhysical = Array.isArray(connector.physicalPrinters)
+        ? connector.physicalPrinters
+        : [];
+      const printerCount = typeof connector.connectedPrinters === 'number'
+        ? connector.connectedPrinters
+        : rawPhysical.length;
 
       // Determine state machine representation
       const connectionState = !isAlive
@@ -376,6 +387,8 @@ export class ConnectorController {
         : printerCount > 0
         ? 'READY'
         : 'CONNECTED';
+
+      logger.info(`[Connector Status API] Store ${storeId} -> isAlive=${isAlive}, status=${effectiveStatus}, printerCount=${printerCount}, physicalPrinters=${JSON.stringify(rawPhysical.map((p: any) => p.name || p.printerName || p.id))}`);
 
       if (!isAlive) {
         res.status(408).json({
@@ -392,6 +405,7 @@ export class ConnectorController {
             storeId: connector.storeId,
             machineName: connector.hostname,
             physicalPrinterCount: printerCount,
+            physicalPrinters: rawPhysical,
             connectionState,
             lastHeartbeat: connector.lastHeartbeat,
             state: effectiveState,
@@ -403,8 +417,7 @@ export class ConnectorController {
             isAlive: false,
             lastHeartbeatSecondsAgo: Math.round(diffMs / 1000),
             health: connector.health,
-            connectedPrinters: connector.connectedPrinters,
-            physicalPrinters: connector.physicalPrinters
+            connectedPrinters: printerCount
           }
         });
         return;
@@ -424,6 +437,7 @@ export class ConnectorController {
           storeId: connector.storeId,
           machineName: connector.hostname,
           physicalPrinterCount: printerCount,
+          physicalPrinters: rawPhysical,
           connectionState,
           lastHeartbeat: connector.lastHeartbeat,
           state: effectiveState,
@@ -435,8 +449,7 @@ export class ConnectorController {
           isAlive: true,
           lastHeartbeatSecondsAgo: Math.round(diffMs / 1000),
           health: connector.health,
-          connectedPrinters: connector.connectedPrinters,
-          physicalPrinters: connector.physicalPrinters
+          connectedPrinters: printerCount
         }
       });
     } catch (err: any) {
@@ -484,11 +497,13 @@ export class ConnectorController {
         return;
       }
 
-      const count = physicalPrinters !== undefined 
-        ? (typeof physicalPrinters === 'number' ? physicalPrinters : (Array.isArray(physicalPrinters) ? physicalPrinters.length : 0))
-        : (physicalPrinterCount !== undefined 
-          ? physicalPrinterCount 
-          : (Array.isArray(printers) ? printers.length : 0));
+      // Live physical printers array reported by Desktop Connector
+      const livePrinters: any[] = Array.isArray(physicalPrinters)
+        ? physicalPrinters
+        : (Array.isArray(printers) ? printers : []);
+      const count = typeof physicalPrinterCount === 'number'
+        ? physicalPrinterCount
+        : livePrinters.length;
 
       const isHostAlive = hostRunning !== undefined ? hostRunning : (hostState === 'RUNNING' || hostState === true);
       const isAuth = authenticated !== undefined ? authenticated : true;
@@ -504,7 +519,7 @@ export class ConnectorController {
         socketConnected: isSocket,
         version: version || connectorVersion || '1.0.0',
         connectedPrinters: count,
-        physicalPrinters: Array.isArray(printers) ? printers : (Array.isArray(physicalPrinters) ? physicalPrinters : count),
+        physicalPrinters: livePrinters,
         health: {
           cpuUsagePercent: cpu || 0,
           memoryMB: ram?.processRssMB || ram?.usedMB || 0,
@@ -541,14 +556,14 @@ export class ConnectorController {
       );
 
       if (connector) {
-        logger.info(`[Heartbeat acknowledged] Heartbeat recorded for connector ${connectorId || connector.connectorId}`);
-        logger.info(`[Status updated in MongoDB] Connector ${connectorId || connector.connectorId} status updated: status=${updateData.status}, state=${updateData.state}, auth=${updateData.authenticated}`);
+        logger.info(`[Heartbeat Ingest] Connector ${connectorId || connector.connectorId} (store: ${connector.storeId}) reported ${count} physical printer(s): ${JSON.stringify(livePrinters.map((p: any) => p.name || p.printerName || p.id))}`);
+        logger.info(`[Status updated in MongoDB] Connector ${connectorId || connector.connectorId} status updated: status=${updateData.status}, state=${updateData.state}, connectedPrinters=${count}`);
 
         connectorRegistry.recordHeartbeat(connectorId, updateData.health);
 
         // Broadcast heartbeat event to store room with full fields
         socketManager.emitToStore(connector.storeId.toString(), 'heartbeat', {
-          connectorId,
+          connectorId: connector.connectorId,
           storeId: connector.storeId.toString(),
           status: 'ONLINE',
           state: updateData.state,
@@ -558,23 +573,25 @@ export class ConnectorController {
           hostRunning: updateData.hostRunning,
           printerCount: count,
           printersCount: count,
+          physicalPrinterCount: count,
+          printers: livePrinters,
+          physicalPrinters: livePrinters,
           lastHeartbeat: updateData.lastHeartbeat,
           health: updateData.health,
           timestamp: timestamp || new Date().toISOString()
         });
 
-        // If physical printers were provided, also emit printers_updated
-        if (printers && Array.isArray(printers)) {
-          socketManager.emitToStore(connector.storeId.toString(), 'printers_updated', {
-            connectorId,
-            printers,
-            count: printers.length,
-            timestamp: new Date().toISOString()
-          });
-        }
+        // Always broadcast printers_updated so web dashboard immediately reflects live count (0 or more)
+        socketManager.emitToStore(connector.storeId.toString(), 'printers_updated', {
+          connectorId: connector.connectorId,
+          storeId: connector.storeId.toString(),
+          printers: livePrinters,
+          count: count,
+          timestamp: new Date().toISOString()
+        });
       }
 
-      res.status(200).json({ success: true, timestamp: new Date().toISOString() });
+      res.status(200).json({ success: true, count, timestamp: new Date().toISOString() });
     } catch (err: any) {
       logger.error('Error handling connector heartbeat:', err);
       res.status(500).json({ success: false, error: 'Failed to record heartbeat' });
@@ -743,7 +760,6 @@ export class ConnectorController {
       });
 
       logger.info(`[Unpaired] Connector ${connectorId} successfully unpaired from Store ${storeIdStr}`);
-      logger.info(`🔌 Connector ${connectorId} successfully unpaired from Store ${storeIdStr}`);
 
       res.status(200).json({
         success: true,

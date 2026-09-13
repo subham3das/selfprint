@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+﻿import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   DetectedPrinter,
   PrinterNotificationItem
@@ -74,7 +74,7 @@ export const usePrinterMonitoring = () => {
       const storeId = storeAuthService.getStoreId() || undefined;
       const backendStatus = await printerService.getConnectorStatus(storeId);
 
-      // Never treat 400 Bad Request / Validation Failure as Connector Offline (Requirement 3)
+      // Never treat 400 Bad Request / Validation Failure as Connector Offline
       if (backendStatus.isInvalidRequest || backendStatus.httpStatus === 400) {
         return false;
       }
@@ -93,7 +93,7 @@ export const usePrinterMonitoring = () => {
           printerCount: backendStatus.printerCount
         });
 
-        const effectiveState = (backendStatus.state as ConnectionState) || 'READY';
+        const effectiveState = (backendStatus.state as ConnectionState) || (backendStatus.printerCount > 0 ? 'READY' : 'CONNECTED');
         setConnectionState(effectiveState);
         lastKnownStateRef.current = effectiveState;
 
@@ -106,29 +106,40 @@ export const usePrinterMonitoring = () => {
           });
         }
 
-        // Synchronize physical printers if available
-        if (Array.isArray(backendStatus.physicalPrinters) && backendStatus.physicalPrinters.length > 0) {
-          const mapped: DetectedPrinter[] = backendStatus.physicalPrinters.map((p: any) => ({
-            id: p.id || p.deviceId || p.name,
-            name: p.name || p.printerName,
-            brand: p.brand || 'Generic',
-            model: p.model || p.name,
-            type: p.type || 'LaserJet',
-            connection: p.connectionType || 'USB',
-            port: p.port || 'USB001',
-            isColor: p.capabilities?.isColor ?? false,
-            isDuplexSupported: p.capabilities?.isDuplex ?? true,
-            isAutoCutSupported: p.capabilities?.isAutoCut ?? false,
-            isDriverInstalled: true,
-            paperLevel: p.paperLevel ?? 90,
-            inkLevels: { black: p.tonerLevel ?? 85 },
-            status: p.status === 'ONLINE' ? 'Online' : 'Offline',
-            firmwareVersion: '1.0.0',
-            serialNumber: p.id || p.name
-          }));
-          setPrinters(mapped);
+        // Synchronize physical printers strictly from backend telemetry
+        const rawPhysical = Array.isArray(backendStatus.physicalPrinters) ? backendStatus.physicalPrinters : [];
+        const mapped: DetectedPrinter[] = rawPhysical.map((p: any) => ({
+          id: p.id || p.deviceId || p.name,
+          name: p.name || p.printerName,
+          brand: p.brand || 'Generic',
+          model: p.model || p.name,
+          type: p.type || 'LaserJet',
+          connection: p.connectionType || p.connection || 'USB',
+          port: p.port || 'USB001',
+          isColor: p.capabilities?.isColor ?? false,
+          isDuplexSupported: p.capabilities?.isDuplex ?? true,
+          isAutoCutSupported: p.capabilities?.isAutoCut ?? false,
+          isDriverInstalled: true,
+          paperLevel: p.paperLevel ?? 90,
+          inkLevels: { black: p.tonerLevel ?? 85 },
+          status: p.status === 'ONLINE' ? 'Online' : 'Offline',
+          firmwareVersion: '1.0.0',
+          serialNumber: p.id || p.name
+        }));
+        setPrinters(mapped);
+        if (mapped.length > 0) {
           setActivePrinter(mapped[0]);
+        } else {
+          setActivePrinter(EMPTY_PRINTER);
         }
+
+        console.log('[usePrinterMonitoring] Hardware state synced from backend:', {
+          isConnectorOnline: backendStatus.isOnline,
+          backendReportedPrinters: backendStatus.printerCount,
+          mappedPrintersCount: mapped.length,
+          activePrinter: mapped[0]?.name || 'None'
+        });
+
         return true;
       } else {
         const nextState: ConnectionState =
@@ -142,19 +153,18 @@ export const usePrinterMonitoring = () => {
         setActivePrinter(EMPTY_PRINTER);
         printerService.clearSavedPrinter();
 
-        // ONLY show offline notification on TRUE transition from CONNECTED/READY → OFFLINE (Requirement 4)
-        // OFFLINE → OFFLINE: Silent
+        // ONLY show offline notification on TRUE transition from CONNECTED/READY -> OFFLINE
         if ((prevState === 'CONNECTED' || prevState === 'READY') && backendStatus.httpStatus === 408) {
           addNotification({
             type: 'error',
             title: 'Connector Offline',
-            message: backendStatus.errorMessage || 'Desktop Connector heartbeat timeout (>15s).'
+            message: backendStatus.errorMessage || 'Desktop Connector heartbeat timeout (>35s).'
           });
         }
         return false;
       }
     } catch {
-      // Network failure: silent update during background polling (Requirement 5)
+      // Network failure: silent update during background polling
       const prevState = lastKnownStateRef.current;
       lastKnownStateRef.current = 'OFFLINE';
       setIsConnectorOnline(false);
@@ -192,35 +202,35 @@ export const usePrinterMonitoring = () => {
     socket.emit('join_store', storeId);
 
     const handlePrinterSynced = (data: { count?: number; printers?: any[] }) => {
-      if (Array.isArray(data.printers)) {
-        const mapped: DetectedPrinter[] = data.printers.map((p: any) => ({
-          id: p.id || p.deviceId || p.name,
-          name: p.printerName || p.name,
-          brand: p.brand || 'Generic',
-          model: p.model || p.printerName,
-          type: p.type || 'LaserJet',
-          connection: p.connectionType || 'USB',
-          port: p.port || 'USB001',
-          isColor: p.capabilities?.isColor ?? false,
-          isDuplexSupported: p.capabilities?.isDuplex ?? true,
-          isAutoCutSupported: p.capabilities?.isAutoCut ?? false,
-          isDriverInstalled: true,
-          paperLevel: p.paperLevel ?? 90,
-          inkLevels: { black: p.tonerLevel ?? 85 },
-          status: p.status === 'ONLINE' ? 'Online' : 'Offline',
-          firmwareVersion: '1.0.0',
-          serialNumber: p.id || p.name
-        }));
-
-        setPrinters(mapped);
-        if (mapped.length > 0) {
-          setActivePrinter(mapped[0]);
-        }
-        setConnectionState('READY');
+      const raw = Array.isArray(data.printers) ? data.printers : [];
+      const mapped: DetectedPrinter[] = raw.map((p: any) => ({
+        id: p.id || p.deviceId || p.name,
+        name: p.printerName || p.name,
+        brand: p.brand || 'Generic',
+        model: p.model || p.printerName || p.name,
+        type: p.type || 'LaserJet',
+        connection: p.connectionType || p.connection || 'USB',
+        port: p.port || 'USB001',
+        isColor: p.capabilities?.isColor ?? false,
+        isDuplexSupported: p.capabilities?.isDuplex ?? true,
+        isAutoCutSupported: p.capabilities?.isAutoCut ?? false,
+        isDriverInstalled: true,
+        paperLevel: p.paperLevel ?? 90,
+        inkLevels: { black: p.tonerLevel ?? 85 },
+        status: p.status === 'ONLINE' ? 'Online' : 'Offline',
+        firmwareVersion: '1.0.0',
+        serialNumber: p.id || p.name
+      }));
+      setPrinters(mapped);
+      if (mapped.length > 0) {
+        setActivePrinter(mapped[0]);
+      } else {
+        setActivePrinter(EMPTY_PRINTER);
       }
+      console.log('[usePrinterMonitoring:handlePrinterSynced] Realtime printers synced:', { count: mapped.length, printers: mapped });
     };
 
-    const handleConnectorConnected = (data?: any) => {
+    const handleConnectorConnected = (data: any) => {
       const prevState = lastKnownStateRef.current;
       lastKnownStateRef.current = 'CONNECTED';
       setIsConnectorOnline(true);
@@ -262,7 +272,7 @@ export const usePrinterMonitoring = () => {
         addNotification({
           type: 'error',
           title: 'Connector Offline',
-          message: data?.reason || 'Desktop Connector heartbeat timeout (>15s) or disconnected.'
+          message: data?.reason || 'Desktop Connector heartbeat timeout (>35s) or disconnected.'
         });
       }
     };
@@ -271,7 +281,7 @@ export const usePrinterMonitoring = () => {
       setConnectionState('RECONNECTING');
     };
 
-    const handleConnectorStatus = (data: { status?: string; state?: ConnectionState }) => {
+    const handleConnectorStatus = (data: { status?: string; state?: ConnectionState; printerCount?: number }) => {
       const nextState = data?.state || (data?.status as ConnectionState);
       if (nextState) {
         setConnectionState(nextState);
@@ -317,20 +327,22 @@ export const usePrinterMonitoring = () => {
 
     const handleHeartbeat = (data: any) => {
       setIsConnectorOnline(true);
+      const count = data?.printerCount ?? data?.physicalPrinterCount ?? 0;
       if (data?.state) {
         setConnectionState(data.state as ConnectionState);
       } else {
-        setConnectionState('READY');
+        setConnectionState(count > 0 ? 'READY' : 'CONNECTED');
       }
       setHostInfo((prev: any) => ({
         ...prev,
         lastHeartbeat: data?.timestamp,
         authenticated: data?.authenticated,
         socketConnected: data?.socketConnected,
-        printerCount: data?.printerCount
+        printerCount: count
       }));
-      if (Array.isArray(data?.printers) && data.printers.length > 0) {
-        handlePrinterSynced({ count: data.printers.length, printers: data.printers });
+      if (Array.isArray(data?.printers) || Array.isArray(data?.physicalPrinters)) {
+        const raw = Array.isArray(data?.printers) ? data.printers : data.physicalPrinters;
+        handlePrinterSynced({ count: raw.length, printers: raw });
       }
     };
 

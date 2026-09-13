@@ -54,7 +54,24 @@ export const printerService = {
       const res = await apiClient.get(url, { params });
       if (res.data?.success && res.data?.data) {
         const d = res.data.data;
-        const count = d.physicalPrinterCount ?? d.printerCount ?? d.connectedPrinters ?? 0;
+        const rawPhysical = Array.isArray(d.physicalPrinters) ? d.physicalPrinters : [];
+        const count = typeof d.physicalPrinterCount === 'number'
+          ? d.physicalPrinterCount
+          : (typeof d.printerCount === 'number'
+            ? d.printerCount
+            : (typeof d.connectedPrinters === 'number' ? d.connectedPrinters : rawPhysical.length));
+
+        const isOnline = Boolean(d.isAlive ?? (d.status === 'ONLINE'));
+
+        // Structured logging for live printer synchronization audit
+        console.groupCollapsed(`[PrinterService:getConnectorStatus] Backend Status (Live Printers: ${count})`);
+        console.log('Online State:            ', isOnline ? 'ONLINE' : 'OFFLINE');
+        console.log('Paired:                  ', Boolean(d.paired ?? d.isPaired));
+        console.log('Connector Reported Count:', count);
+        console.log('Physical Printers Array: ', rawPhysical);
+        console.log('Raw Payload:             ', d);
+        console.groupEnd();
+
         return {
           paired: Boolean(d.paired ?? d.isPaired),
           authenticated: Boolean(d.authenticated),
@@ -64,13 +81,13 @@ export const printerService = {
           storeId: d.storeId || effectiveStoreId || null,
           machineName: d.machineName || (d.isAlive ? d.hostname : null),
           physicalPrinterCount: count,
-          connectionState: d.connectionState || (d.paired && d.isAlive ? 'CONNECTED' : 'RUNNING_UNPAIRED'),
+          connectionState: d.connectionState || (d.paired && d.isAlive ? (count > 0 ? 'READY' : 'CONNECTED') : 'RUNNING_UNPAIRED'),
           lastHeartbeat: d.lastHeartbeat,
-          state: d.state || (d.isAlive ? 'READY' : 'OFFLINE'),
+          state: d.state || (d.isAlive ? (count > 0 ? 'READY' : 'CONNECTED') : 'OFFLINE'),
           printerCount: count,
-          isOnline: Boolean(d.isAlive ?? (d.status === 'ONLINE')),
+          isOnline,
           connector: d,
-          physicalPrinters: d.physicalPrinters || [],
+          physicalPrinters: rawPhysical,
           httpStatus: 200,
           errorCode: d.code || 'CONNECTOR_ONLINE'
         };
@@ -180,6 +197,11 @@ export const printerService = {
       // 408 -> Connector Offline (Heartbeat expired > 35s)
       if (status === 408) {
         const d = body?.data;
+        const rawPhysical = Array.isArray(d?.physicalPrinters) ? d.physicalPrinters : [];
+        const count = typeof d?.physicalPrinterCount === 'number'
+          ? d.physicalPrinterCount
+          : (typeof d?.printerCount === 'number' ? d.printerCount : rawPhysical.length);
+
         return {
           paired: true,
           authenticated: false,
@@ -188,10 +210,11 @@ export const printerService = {
           deviceTokenValid: Boolean(d?.deviceTokenValid),
           storeId: d?.storeId || effectiveStoreId || null,
           machineName: d?.machineName || null,
-          physicalPrinterCount: d?.physicalPrinterCount || 0,
+          physicalPrinterCount: count,
+          physicalPrinters: rawPhysical,
           connectionState: 'INSTALLED_NOT_RUNNING',
           state: 'OFFLINE',
-          printerCount: d?.physicalPrinterCount || 0,
+          printerCount: count,
           isOnline: false,
           httpStatus: 408,
           errorCode: 'CONNECTOR_OFFLINE',
@@ -211,6 +234,7 @@ export const printerService = {
           storeId: effectiveStoreId || null,
           machineName: null,
           physicalPrinterCount: 0,
+          physicalPrinters: [],
           connectionState: 'RUNNING_UNPAIRED',
           state: 'BACKEND_ERROR',
           printerCount: 0,
@@ -231,6 +255,7 @@ export const printerService = {
       storeId: effectiveStoreId || null,
       machineName: null,
       physicalPrinterCount: 0,
+      physicalPrinters: [],
       connectionState: 'RUNNING_UNPAIRED',
       state: 'NETWORK_ERROR',
       printerCount: 0,
@@ -293,7 +318,8 @@ export const printerService = {
   },
 
   /**
-   * Discovers physical printers registered for this store's connector via backend telemetry
+   * Discovers physical printers registered for this store's connector via live backend telemetry.
+   * Single Source of Truth: The Desktop Connector live heartbeat. Never falls back to cached database records.
    */
   async detectPrinters(options?: {
     simulateError?: PrinterErrorType;
@@ -312,12 +338,12 @@ export const printerService = {
 
       const rawPrinters = Array.isArray(status.physicalPrinters) ? status.physicalPrinters : [];
 
-      // Fallback: Check /printer/store if physicalPrinters array was empty in status
+      console.groupCollapsed(`[PrinterService:detectPrinters] Live Detection (${rawPrinters.length} physical printers)`);
+      console.log('Connector Online:       ', status.isOnline);
+      console.log('Raw Printers from Daemon:', rawPrinters);
+      console.groupEnd();
+
       if (rawPrinters.length === 0) {
-        const storePrinters = await this.fetchStorePrinters();
-        if (storePrinters.length > 0) {
-          return storePrinters;
-        }
         throw new Error('NoPhysicalPrinterDetected');
       }
 
@@ -460,7 +486,7 @@ export const printerService = {
   },
 
   /**
-   * Fetches active configured printers from MongoDB backend
+   * Fetches configured printer records from MongoDB backend (used for historical display)
    */
   async fetchStorePrinters(): Promise<DetectedPrinter[]> {
     try {
