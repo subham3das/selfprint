@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { StoreInfo, SummaryBreakdown, PrinterStatusInfo } from '../types/dashboard.types';
+import { useConnectorStore } from '../stores/useConnectorStore';
 
 interface SidebarProps {
   activeNav: string;
@@ -55,9 +56,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
 
+  const { testMode: isTestMode } = useConnectorStore();
+
+  const isPrinterVirtual = Boolean(
+    (printerStatus as any)?.isVirtual ||
+    (printerStatus as any)?.testMode ||
+    printerStatus?.name?.toLowerCase().includes('virtual') ||
+    printerStatus?.name?.toLowerCase().includes('print to pdf') ||
+    printerStatus?.model?.toLowerCase().includes('virtual')
+  );
+
   const effectivePrinterConfigured =
-    isPrinterConfigured ||
-    (printerStatus?.isConfigured ?? storeInfo.printerConfigured ?? false);
+    (isPrinterConfigured || (printerStatus?.isConfigured ?? storeInfo.printerConfigured ?? false)) &&
+    (!isPrinterVirtual || isTestMode);
 
   const handleNavClick = (item: (typeof navItems)[0]) => {
     onNavChange(item.id);
