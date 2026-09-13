@@ -32,7 +32,7 @@ export class SettingsService {
       doubleSidedDefault: settingsDoc.printer?.doubleSidedDefault ?? false,
       paperSaveMode: settingsDoc.printer?.paperSaveMode ?? false,
       isPaused: settingsDoc.printer?.isPaused ?? false,
-      testMode: settingsDoc.printer?.testMode ?? false,
+      testMode: Boolean(store.testMode ?? settingsDoc.printer?.testMode ?? false),
       paperStatus: (printerDoc?.paperLevel && printerDoc.paperLevel < 20 ? 'Low' : 'Full') as any,
       inkStatus: (printerDoc?.tonerLevel && printerDoc.tonerLevel < 20 ? 'Low' : 'Full') as any
     };
@@ -163,19 +163,32 @@ export class SettingsService {
     const store = await this.repository.getStore(storeIdParam);
     if (!store) return null;
 
+    const isTestMode = input.testMode !== undefined ? Boolean(input.testMode) : undefined;
+    
+    // 1. Update StoreSettings model
     await this.repository.updateStoreSettings(store._id, { printer: input });
+
+    // 2. Persist in Store model directly
+    if (isTestMode !== undefined) {
+      await this.repository.updateStore(store._id, { testMode: isTestMode });
+      logger.info(`[TestMode] Store ${store._id} testMode successfully persisted in DB as ${isTestMode}`);
+    }
+
     const full = await this.getFullSettings(storeIdParam);
 
-    if (input.testMode !== undefined) {
-      await this.repository.updateStore(store._id, { testMode: Boolean(input.testMode) });
-      logger.info(`[TestMode] Store ${store._id} testMode updated to ${input.testMode}`);
+    // 3. Broadcast real-time events to all store sockets (Store Panel tabs & Desktop Connector)
+    if (isTestMode !== undefined) {
       socketManager.emitToStore(store._id.toString(), 'store:testModeChanged', {
         storeId: store._id.toString(),
-        testMode: Boolean(input.testMode)
+        testMode: isTestMode
       });
       socketManager.emitToStore(store._id.toString(), 'test_mode_changed', {
         storeId: store._id.toString(),
-        testMode: Boolean(input.testMode)
+        testMode: isTestMode
+      });
+      socketManager.emitToStore(store._id.toString(), 'store_test_mode', {
+        storeId: store._id.toString(),
+        testMode: isTestMode
       });
     }
 

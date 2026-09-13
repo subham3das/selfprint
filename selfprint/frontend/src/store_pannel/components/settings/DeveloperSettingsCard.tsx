@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Check, AlertTriangle, Terminal, Shield, Laptop, RefreshCw } from 'lucide-react';
 import { PrinterSettingsConfig } from '../../types/settings.types';
 import { useStoreSession } from '../../hooks/useStoreSession';
+import { getSocket, joinStoreRoom } from '@/lib/socket';
 
 interface DeveloperSettingsCardProps {
   printer: PrinterSettingsConfig;
@@ -13,193 +14,167 @@ export const DeveloperSettingsCard: React.FC<DeveloperSettingsCardProps> = ({
   onSave
 }) => {
   const storeInfo = useStoreSession();
+  const storeId = storeInfo?.id;
+
   const [testMode, setTestMode] = useState<boolean>(Boolean(printer?.testMode));
-  const [isSaved, setIsSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-  // Gating: Only store owners and admins can toggle Test Mode
-  const userRole = (storeInfo as any)?.role || 'OWNER';
-  const canModify = userRole === 'OWNER' || userRole === 'ADMIN';
+  // Sync state whenever backend printer settings are fetched or updated
+  useEffect(() => {
+    if (printer?.testMode !== undefined) {
+      setTestMode(Boolean(printer.testMode));
+    }
+  }, [printer?.testMode]);
 
-  const handleToggle = () => {
-    if (!canModify) return;
-    if (!testMode) {
+  // Real-time synchronization across multi-tabs via WebSocket
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    if (storeId) {
+      joinStoreRoom(storeId);
+    }
+
+    const handleTestMode = (data: { testMode?: boolean; enabled?: boolean }) => {
+      const nextVal = Boolean(data?.testMode ?? data?.enabled);
+      setTestMode(nextVal);
+    };
+
+    socket.on('store:testModeChanged', handleTestMode);
+    socket.on('test_mode_changed', handleTestMode);
+    socket.on('store_test_mode', handleTestMode);
+
+    return () => {
+      socket.off('store:testModeChanged', handleTestMode);
+      socket.off('test_mode_changed', handleTestMode);
+      socket.off('store_test_mode', handleTestMode);
+    };
+  }, [storeId]);
+
+  const handleToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nextVal = e.target.checked;
+    if (nextVal) {
+      // Show confirmation when turning Test Mode ON
       setShowConfirmModal(true);
     } else {
-      setTestMode(false);
-      saveSetting(false);
+      // Instantly disable and persist
+      await applyTestMode(false);
     }
   };
 
-  const confirmEnable = () => {
-    setTestMode(true);
-    saveSetting(true);
-    setShowConfirmModal(false);
-  };
-
-  const saveSetting = async (enabled: boolean) => {
+  const applyTestMode = async (enabled: boolean) => {
     setIsSaving(true);
+    setTestMode(enabled);
     try {
-      const updated = { ...printer, testMode: enabled };
-      await onSave(updated);
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 2000);
+      await onSave({
+        ...printer,
+        testMode: enabled
+      });
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err) {
-      console.error('Failed to save test mode:', err);
+      console.error('Failed to save test mode setting:', err);
+      // Revert state on error
+      setTestMode(!enabled);
     } finally {
       setIsSaving(false);
     }
   };
 
+  const confirmEnable = async () => {
+    setShowConfirmModal(false);
+    await applyTestMode(true);
+  };
+
   return (
-    <div className="bg-white border border-slate-200/70 rounded-2xl p-6 shadow-sm flex flex-col justify-between relative">
-      <div>
-        {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-slate-900 text-slate-100 flex items-center justify-center">
-              <Terminal className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                Developer Settings
-                {testMode && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300 uppercase tracking-wide">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                    TEST MODE ACTIVE
-                  </span>
-                )}
-              </h2>
-              <p className="text-xs text-slate-500 font-normal">
-                Virtual hardware emulation, developer sandboxing &amp; diagnostic controls
-              </p>
-            </div>
+    <div className="bg-white border border-slate-200/80 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between pb-6 border-b border-slate-100">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center shadow-xs">
+            <Terminal className="w-6 h-6" />
           </div>
-        </div>
-
-        {/* Developer Sandbox Section */}
-        <div className="pt-5 space-y-5">
-          {/* Active Banner */}
-          {testMode ? (
-            <div className="p-4 bg-amber-50/90 border border-amber-300/80 rounded-2xl flex items-start gap-3.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-200/70 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
-                <AlertTriangle className="w-4 h-4" />
-              </div>
-              <div className="text-xs text-amber-900 space-y-1">
-                <p className="font-extrabold text-sm">Virtual Printer Emulation Active</p>
-                <p className="leading-relaxed">
-                  The desktop connector is exposing <strong>SelfPrint Virtual Printer</strong> (via <code>Microsoft Print to PDF</code>). Print jobs are intercepted and rendered directly to:
-                </p>
-                <div className="mt-1 p-2 bg-amber-100/80 rounded-lg font-mono text-[11px] font-bold text-amber-950 break-all">
-                  Documents \ SelfPrint \ TestPrints \ receipt-&lt;jobId&gt;.pdf
-                </div>
-                <p className="text-[11px] text-amber-800 font-medium pt-1">
-                  ⚠️ Disable Test Mode before processing real customer print orders.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-start gap-3.5">
-              <div className="w-8 h-8 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0 mt-0.5">
-                <Laptop className="w-4 h-4" />
-              </div>
-              <div className="text-xs text-slate-600">
-                <p className="font-bold text-slate-800 text-sm">Production Mode Active</p>
-                <p className="mt-0.5 leading-relaxed">
-                  Only verified physical hardware printers (USB, Network, WiFi, Bluetooth) are detected and used for print orders.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Test Mode Toggle Control */}
-          <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between">
-            <div className="space-y-0.5 max-w-md">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-extrabold text-slate-900">
-                  Enable Test Mode
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                Developer &amp; Test Mode
+              </h2>
+              {testMode && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+                  🧪 Sandbox Active
                 </span>
-                <span className="px-2 py-0.5 text-[9px] font-bold rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 uppercase">
-                  Sandbox
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Allow testing the full printing pipeline without owning a physical printer. Automatically injects <strong>SelfPrint Virtual Printer</strong> if no printer is connected.
-              </p>
-              {!canModify && (
-                <p className="text-[11px] text-rose-600 font-medium flex items-center gap-1 mt-1">
-                  <Shield className="w-3.5 h-3.5" />
-                  Only Store Owners and Admins can toggle Test Mode.
-                </p>
               )}
             </div>
-
-            <button
-              type="button"
-              disabled={!canModify || isSaving}
-              onClick={handleToggle}
-              className={`w-12 h-7 flex items-center rounded-full p-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                testMode ? 'bg-amber-500' : 'bg-slate-300'
-              }`}
-            >
-              <div
-                className={`bg-white w-5 h-5 rounded-full shadow-md transform transition-transform ${
-                  testMode ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Developer Telemetry & Info */}
-          <div className="p-4 rounded-2xl bg-slate-50/70 border border-slate-200/60 space-y-2 text-xs">
-            <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">
-              Pipeline Specifications
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-600">
-              <div className="p-2.5 bg-white rounded-xl border border-slate-100 flex flex-col gap-0.5">
-                <span className="text-slate-400 font-bold text-[10px] uppercase">Virtual Device</span>
-                <span className="font-bold text-slate-800">SelfPrint Virtual Printer</span>
-              </div>
-              <div className="p-2.5 bg-white rounded-xl border border-slate-100 flex flex-col gap-0.5">
-                <span className="text-slate-400 font-bold text-[10px] uppercase">Driver Hook</span>
-                <span className="font-bold text-slate-800">Microsoft Print to PDF</span>
-              </div>
-              <div className="p-2.5 bg-white rounded-xl border border-slate-100 flex flex-col gap-0.5">
-                <span className="text-slate-400 font-bold text-[10px] uppercase">Lifecycle States</span>
-                <span className="font-mono text-slate-800 font-semibold">Pending ➔ Accepted ➔ Printing ➔ Completed</span>
-              </div>
-              <div className="p-2.5 bg-white rounded-xl border border-slate-100 flex flex-col gap-0.5">
-                <span className="text-slate-400 font-bold text-[10px] uppercase">File Naming</span>
-                <span className="font-mono text-slate-800 font-semibold">receipt-&lt;jobId&gt;.pdf</span>
-              </div>
-            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Simulate full print pipeline without physical hardware. Output generates virtual PDF receipts.
+            </p>
           </div>
         </div>
 
-        {/* Footer Save Feedback */}
-        <div className="flex items-center justify-between pt-6 border-t border-slate-100 mt-6">
-          <span className="text-xs text-slate-400">
-            Changes synchronize instantly with connected desktop daemons via WebSockets.
-          </span>
-          {isSaving ? (
-            <span className="text-xs text-indigo-600 font-bold flex items-center gap-1.5">
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              Saving...
-            </span>
-          ) : isSaved ? (
-            <span className="text-xs text-emerald-600 font-bold flex items-center gap-1.5">
-              <Check className="w-3.5 h-3.5" />
-              Settings Saved!
-            </span>
-          ) : null}
+        {savedSuccess && (
+          <div className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+            <Check className="w-3.5 h-3.5" />
+            <span>Persisted</span>
+          </div>
+        )}
+      </div>
+
+      {/* Main Toggle Box */}
+      <div className="p-5 rounded-2xl bg-gradient-to-br from-purple-50/50 via-slate-50 to-indigo-50/30 border border-purple-100/80 space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span>Enable Test Mode (Virtual Printer Sandbox)</span>
+              {isSaving && <RefreshCw className="w-3.5 h-3.5 text-purple-600 animate-spin" />}
+            </h4>
+            <p className="text-xs text-slate-600 leading-relaxed max-w-xl">
+              When enabled, Desktop Connector exposes <strong>Microsoft Print to PDF</strong> and virtual test printers. Real print jobs simulate complete 4-state lifecycle and save PDF outputs locally without consuming paper or ink.
+            </p>
+          </div>
+
+          <label className="relative inline-flex items-center cursor-pointer shrink-0">
+            <input
+              type="checkbox"
+              checked={testMode}
+              disabled={isSaving}
+              onChange={handleToggle}
+              className="sr-only peer"
+            />
+            <div className="w-14 h-7 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-purple-600"></div>
+          </label>
+        </div>
+
+        {testMode && (
+          <div className="p-4 bg-purple-50/70 border border-purple-200/70 rounded-xl space-y-2 text-xs">
+            <div className="flex items-center gap-2 text-purple-900 font-bold">
+              <Laptop className="w-4 h-4 text-purple-600" />
+              <span>Virtual Output Directory</span>
+            </div>
+            <p className="text-purple-800 font-mono text-[11px] bg-white/80 p-2 rounded-lg border border-purple-200 select-all">
+              Documents \ SelfPrint \ TestPrints \ receipt-&lt;jobId&gt;.pdf
+            </p>
+            <p className="text-[11px] text-purple-700">
+              Jobs stream states: <code>Pending</code> ➔ <code>Accepted</code> ➔ <code>Printing</code> ➔ <code>Completed</code>.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Permissions / Security Note */}
+      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/70 flex items-start gap-3 text-xs text-slate-500">
+        <Shield className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+        <div>
+          <span className="font-bold text-slate-700">Store-Specific Scope: </span>
+          Test Mode is securely isolated to this store (<code>{storeInfo.storeCode || 'Current Store'}</code>) and persists across page refreshes, browser reopens, and connector restarts.
         </div>
       </div>
 
-      {/* Safety Confirmation Modal */}
+      {/* Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 mb-2">
               <AlertTriangle className="w-6 h-6" />
             </div>
@@ -239,3 +214,5 @@ export const DeveloperSettingsCard: React.FC<DeveloperSettingsCardProps> = ({
     </div>
   );
 };
+
+export default DeveloperSettingsCard;

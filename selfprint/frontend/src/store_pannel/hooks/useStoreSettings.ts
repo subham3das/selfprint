@@ -1,3 +1,6 @@
+import { useEffect } from 'react';
+import { getSocket, joinStoreRoom } from '@/lib/socket';
+import { useStoreSession } from './useStoreSession';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   storeSettingsService,
@@ -89,6 +92,35 @@ export const useStoreSettings = () => {
       storeSettingsService.restoreBackup(backupData),
     onSuccess: invalidate
   });
+
+  // Real-time synchronization across multi-tabs via WebSocket
+  const storeInfo = useStoreSession();
+  const storeId = storeInfo?.id;
+
+  useEffect(() => {
+    if (!isEnabled) return;
+    const socket = getSocket();
+    if (!socket) return;
+
+    if (storeId) {
+      joinStoreRoom(storeId);
+    }
+
+    const handleSettingsChanged = () => {
+      queryClient.invalidateQueries({ queryKey: ['storeFullSettings'] });
+      queryClient.invalidateQueries({ queryKey: ['store-dashboard'] });
+    };
+
+    socket.on('store:testModeChanged', handleSettingsChanged);
+    socket.on('test_mode_changed', handleSettingsChanged);
+    socket.on('store:settingsUpdated', handleSettingsChanged);
+
+    return () => {
+      socket.off('store:testModeChanged', handleSettingsChanged);
+      socket.off('test_mode_changed', handleSettingsChanged);
+      socket.off('store:settingsUpdated', handleSettingsChanged);
+    };
+  }, [isEnabled, storeId, queryClient]);
 
   return {
     settings: settingsQuery.data,

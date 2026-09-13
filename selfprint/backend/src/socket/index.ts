@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { logger } from '../utils';
@@ -152,6 +153,22 @@ class SocketManager {
         };
         this.emitToStore(targetStore, 'connector:connected', connPayload);
         this.emitToStore(targetStore, 'connector_connected', connPayload);
+
+        // Transmit current persisted Store Test Mode directly to newly connected connector
+        try {
+          if (storeId && mongoose.Types.ObjectId.isValid(storeId)) {
+            const { StoreModel } = await import('../models/store.model');
+            const targetStoreDoc = await StoreModel.findById(storeId).select('testMode').lean();
+            if (targetStoreDoc && targetStoreDoc.testMode !== undefined) {
+              const tmPayload = { storeId: storeId.toString(), testMode: Boolean(targetStoreDoc.testMode) };
+              socket.emit('store:testModeChanged', tmPayload);
+              socket.emit('test_mode_changed', tmPayload);
+              logger.info(`[Socket] Synced persisted testMode (${targetStoreDoc.testMode}) to connector ${connectorId}`);
+            }
+          }
+        } catch (tmErr) {
+          logger.warn('[Socket] Failed to sync testMode to connector:', tmErr);
+        }
       });
 
       socket.on('connector_offline', (data: any) => {
