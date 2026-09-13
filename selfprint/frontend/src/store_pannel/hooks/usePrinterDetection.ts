@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   PrinterWizardStep,
   DetectedPrinter,
@@ -12,17 +12,10 @@ import {
 
 import { printerService } from '../services/printer.service';
 import { useStoreSession } from './useStoreSession';
-import { getSocket } from '@/lib/socket';
+import { useConnectorStore, ConnectorWizardState } from '../stores/useConnectorStore';
+import { getSocket, joinStoreRoom } from '@/lib/socket';
 
-export type ConnectorWizardState =
-  | 'NOT_INSTALLED'
-  | 'INSTALLED_NOT_RUNNING'
-  | 'RUNNING_UNPAIRED'
-  | 'PAIRING'
-  | 'AUTHENTICATING'
-  | 'CONNECTED'
-  | 'SCANNING_PRINTERS'
-  | 'READY';
+export type { ConnectorWizardState };
 
 export interface BackendConnectorData {
   paired: boolean;
@@ -46,27 +39,55 @@ export const usePrinterDetection = (options?: {
   const storeId = storeInfo?.id;
 
   const [currentStep, setCurrentStep] = useState<PrinterWizardStep>('Welcome');
-  const [connectorState, setConnectorState] = useState<ConnectorWizardState>('RUNNING_UNPAIRED');
-  const [isCheckingStatus, setIsCheckingStatus] = useState(true);
 
-  // Backend Single Source of Truth
-  const [backendConnector, setBackendConnector] = useState<BackendConnectorData>({
-    paired: false,
-    authenticated: false,
-    socketConnected: false,
-    hostRunning: false,
-    deviceTokenValid: false,
-    storeId: null,
-    machineName: null,
-    physicalPrinterCount: 0,
-    status: 'OFFLINE',
-    state: 'NOT_PAIRED'
-  });
+  // Consume Centralized Single Source of Truth from Zustand Store
+  const {
+    paired,
+    isOnline,
+    status,
+    state: storeState,
+    hostname,
+    socketConnected,
+    authenticated,
+    hostRunning,
+    physicalPrinterCount,
+    lastHeartbeat: _lastHeartbeat,
+    isCheckingStatus,
+    pairingCode,
+    pairingExpiresInSeconds,
+    isGeneratingCode,
+    hydrate,
+    manualRefresh,
+    generatePairingCode: storeGenPairingCode,
+    handleSocketHeartbeat,
+    handleSocketConnected,
+    handleSocketDisconnected,
+    handleSocketPaired,
+    handleSocketUnpaired,
+    handlePrintersUpdated,
+    decrementCountdown
+  } = useConnectorStore();
 
-  // Pairing Code State
-  const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [expiresInSeconds, setExpiresInSeconds] = useState(600);
-  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+  const [localWizardState, setLocalWizardState] = useState<ConnectorWizardState | null>(null);
+
+  // Derived connectorState
+  const connectorState: ConnectorWizardState = (localWizardState || storeState) as ConnectorWizardState;
+  const setConnectorState = (s: ConnectorWizardState) => setLocalWizardState(s);
+
+  // Backend Connector Data Adapter
+  const backendConnector: BackendConnectorData = {
+    paired,
+    authenticated,
+    socketConnected,
+    hostRunning,
+    deviceTokenValid: paired,
+    storeId: storeId || null,
+    machineName: hostname,
+    physicalPrinterCount,
+    status,
+    state: storeState
+  };
+
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Printer Scanning & Setup State
@@ -91,183 +112,104 @@ export const usePrinterDetection = (options?: {
   const scanTimerRef = useRef<NodeJS.Timeout | null>(null);
   const messageTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ──── Step 1: Check Backend Ownership Status (Single Source of Truth) ─────
-  const refreshConnectorStatus = useCallback(async () => {
-    setIsCheckingStatus(true);
-    try {
-      const backendRes = await printerService.getConnectorStatus(storeId);
+  // ──── Step 1: Initial Hydration on Mount (REST once) ─────
+  useEffect(() => {
+    hydrate(storeId);
+  }, [storeId, hydrate]);
 
-      setBackendConnector({
-        paired: backendRes.paired,
-        authenticated: backendRes.authenticated,
-        socketConnected: backendRes.socketConnected,
-        hostRunning: backendRes.hostRunning,
-        deviceTokenValid: backendRes.deviceTokenValid,
-        storeId: backendRes.storeId,
-        machineName: backendRes.paired && backendRes.isOnline ? backendRes.machineName : null,
-        physicalPrinterCount: backendRes.physicalPrinterCount,
-        status: backendRes.isOnline ? 'ONLINE' : 'OFFLINE',
-        state: backendRes.state
-      });
-
-      // Strict State Machine Determination based solely on Backend / MongoDB state
-      setConnectorState((prevState) => {
-        // If pairing is explicitly in progress in the UI, keep PAIRING state unless backend confirms paired
-        if (prevState === 'PAIRING' && !backendRes.paired) {
-          return 'PAIRING';
-        }
-        if (prevState === 'AUTHENTICATING' && !backendRes.paired) {
-          return 'AUTHENTICATING';
-        }
-
-        // 1. Confirmed paired & online by backend
-        if (backendRes.paired && backendRes.isOnline) {
-          if (prevState === 'SCANNING_PRINTERS') return 'SCANNING_PRINTERS';
-          if (backendRes.physicalPrinterCount > 0) return 'READY';
-          return 'CONNECTED';
-        }
-
-        // 2. Paired in database, but host or socket is offline
-        if (backendRes.paired && !backendRes.isOnline) {
-          return 'INSTALLED_NOT_RUNNING';
-        }
-
-        // 3. Unpaired (ready to pair with code)
-        return 'RUNNING_UNPAIRED';
-      });
-    } catch (err) {
-      console.warn('Failed to refresh connector status:', err);
-    } finally {
-      setIsCheckingStatus(false);
-    }
-  }, [storeId]);
-
-  // ──── Step 2: 10-Minute Pairing Code Generator ────────────────────────────
+  // ──── Step 2: 10-Minute Pairing Code Countdown ────────────────────────────
   const generatePairingCode = useCallback(async () => {
-    setIsGeneratingCode(true);
-    try {
-      const res = await printerService.generatePairingCode(storeId);
-      const code = res.code || res.pairingCode;
-      const seconds = res.expiresInSeconds || 600;
-
-      setPairingCode(code);
-      setExpiresInSeconds(seconds);
-      setConnectorState('PAIRING');
-
+    const code = await storeGenPairingCode(storeId);
+    if (code) {
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = setInterval(() => {
-        setExpiresInSeconds((prev) => {
-          if (prev <= 1) {
-            clearInterval(countdownTimerRef.current!);
-            return 0;
-          }
-          return prev - 1;
-        });
+        decrementCountdown();
       }, 1000);
-    } catch (err) {
-      console.error('Failed to generate pairing code:', err);
-    } finally {
-      setIsGeneratingCode(false);
     }
-  }, [storeId]);
+  }, [storeId, storeGenPairingCode, decrementCountdown]);
 
   const resetPairing = useCallback(() => {
-    setPairingCode(null);
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
-    refreshConnectorStatus();
-  }, [refreshConnectorStatus]);
+    manualRefresh(storeId);
+  }, [storeId, manualRefresh]);
 
-  // ──── Step 3: Realtime Socket.IO Listeners ─────────────────────────────────
+  // ──── Step 3: Pure WebSocket In-Memory Event Handlers ───────────────────────
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
 
     if (storeId) {
-      socket.emit('join_store', storeId);
+      joinStoreRoom(storeId);
     }
 
-    const handleConnected = () => refreshConnectorStatus();
-    const handleDisconnected = () => refreshConnectorStatus();
-    const handleHeartbeat = () => refreshConnectorStatus();
-
-    const handlePaired = () => {
-      setConnectorState('CONNECTED');
-      setPairingCode(null);
+    const onHeartbeat = (d: any) => handleSocketHeartbeat(d);
+    const onConnected = (d: any) => handleSocketConnected(d);
+    const onDisconnected = (d: any) => handleSocketDisconnected(d);
+    const onPaired = (d: any) => {
+      handleSocketPaired(d);
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
-      refreshConnectorStatus();
     };
-
-    // CRITICAL: Unpair wipe
-    const handleUnpaired = () => {
-      // Immediately wipe cached connector information
-      setBackendConnector({
-        paired: false,
-        authenticated: false,
-        socketConnected: false,
-        hostRunning: false,
-        deviceTokenValid: false,
-        storeId: null,
-        machineName: null,
-        physicalPrinterCount: 0,
-        status: 'OFFLINE',
-        state: 'NOT_PAIRED'
-      });
+    const onUnpaired = () => {
+      handleSocketUnpaired();
       setDetectedPrinters([]);
       setSelectedPrinter(null);
       setCurrentStep('Welcome');
-      setConnectorState('RUNNING_UNPAIRED');
-      refreshConnectorStatus();
+    };
+    const onPrinters = (data: any) => {
+      const raw = Array.isArray(data?.printers) ? data.printers : (Array.isArray(data) ? data : []);
+      handlePrintersUpdated(raw);
     };
 
-    const handlePrintersUpdated = (data: any) => {
-      const raw = Array.isArray(data?.printers) ? data.printers : [];
-      setDetectedPrinters(raw);
-      if (raw.length > 0) {
-        setConnectorState('READY');
-      } else {
-        setConnectorState('CONNECTED');
-        setSelectedPrinter(null);
-      }
-      refreshConnectorStatus();
-    };
+    socket.on('connector:heartbeat', onHeartbeat);
+    socket.on('connector:connected', onConnected);
+    socket.on('connector:disconnected', onDisconnected);
+    socket.on('connector:updated', onConnected);
+    socket.on('connector:paired', onPaired);
+    socket.on('connector:unpaired', onUnpaired);
+    socket.on('printer:updated', onPrinters);
 
-    socket.on('connector:connected', handleConnected);
-    socket.on('connector:disconnected', handleDisconnected);
-    socket.on('connector:heartbeat', handleHeartbeat);
-    socket.on('connector:updated', handleConnected);
-    socket.on('connector:paired', handlePaired);
-    socket.on('connector:unpaired', handleUnpaired);
-    socket.on('printer:updated', handlePrintersUpdated);
-    socket.on('connector_connected', handleConnected);
-    socket.on('connector_disconnected', handleDisconnected);
-    socket.on('connector_authenticated', handleConnected);
-    socket.on('connector_paired', handlePaired);
-    socket.on('connector_unpaired', handleUnpaired);
-    socket.on('printers_updated', handlePrintersUpdated);
-    socket.on('heartbeat', handleHeartbeat);
+    // Fallbacks
+    socket.on('heartbeat', onHeartbeat);
+    socket.on('connector_connected', onConnected);
+    socket.on('connector_disconnected', onDisconnected);
+    socket.on('connector_paired', onPaired);
+    socket.on('connector_unpaired', onUnpaired);
+    socket.on('printers_updated', onPrinters);
 
     return () => {
-      socket.off('connector_connected', handleConnected);
-      socket.off('connector_disconnected', handleDisconnected);
-      socket.off('connector_authenticated', handleConnected);
-      socket.off('connector_paired', handlePaired);
-      socket.off('connector_unpaired', handleUnpaired);
-      socket.off('printers_updated', handlePrintersUpdated);
-      socket.off('heartbeat', handleHeartbeat);
-    };
-  }, [storeId, refreshConnectorStatus]);
+      socket.off('connector:heartbeat', onHeartbeat);
+      socket.off('connector:connected', onConnected);
+      socket.off('connector:disconnected', onDisconnected);
+      socket.off('connector:updated', onConnected);
+      socket.off('connector:paired', onPaired);
+      socket.off('connector:unpaired', onUnpaired);
+      socket.off('printer:updated', onPrinters);
 
-  // Initial load and periodic status polling
+      socket.off('heartbeat', onHeartbeat);
+      socket.off('connector_connected', onConnected);
+      socket.off('connector_disconnected', onDisconnected);
+      socket.off('connector_paired', onPaired);
+      socket.off('connector_unpaired', onUnpaired);
+      socket.off('printers_updated', onPrinters);
+    };
+  }, [
+    storeId,
+    handleSocketHeartbeat,
+    handleSocketConnected,
+    handleSocketDisconnected,
+    handleSocketPaired,
+    handleSocketUnpaired,
+    handlePrintersUpdated
+  ]);
+
+  // Cleanup timers
   useEffect(() => {
-    refreshConnectorStatus();
-    // Real-time event driven (interval removed)
     return () => {
-      
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
       if (scanTimerRef.current) clearInterval(scanTimerRef.current);
       if (messageTimerRef.current) clearInterval(messageTimerRef.current);
     };
-  }, [refreshConnectorStatus]);
+  }, []);
 
   // ──── Step 4: Hardware Scanning ──────────────────────────────────────────
   const startScanning = async (simulateError?: PrinterErrorType) => {
@@ -282,14 +224,14 @@ export const usePrinterDetection = (options?: {
       return;
     }
 
-    // Verify backend confirms connection before scanning
-    if (!backendConnector.paired || backendConnector.status !== 'ONLINE') {
+    // Verify backend/store confirms connection before scanning
+    if (!paired || !isOnline) {
       setCurrentError('HostServiceRequired');
       setCurrentStep('Error');
       return;
     }
 
-    setConnectorState('SCANNING_PRINTERS');
+    setLocalWizardState('SCANNING_PRINTERS');
     setCurrentStep('Scanning');
     setScanningProgress(0);
     setScanningMessage(SCANNING_MESSAGES[0]);
@@ -315,11 +257,11 @@ export const usePrinterDetection = (options?: {
 
       setDetectedPrinters(printers);
       if (printers.length > 0) {
-        setConnectorState('READY');
+        setLocalWizardState('READY');
         setSelectedPrinter(printers[0]);
         setCurrentStep('Selection');
       } else {
-        setConnectorState('CONNECTED');
+        setLocalWizardState('CONNECTED');
         setSelectedPrinter(null);
         setCurrentError('NoPrinterFound');
         setCurrentStep('Error');
@@ -401,9 +343,9 @@ export const usePrinterDetection = (options?: {
 
   // Backward compatibility object for hostStatus
   const hostStatus = {
-    isOnline: backendConnector.paired && backendConnector.status === 'ONLINE',
+    isOnline: paired && isOnline,
     isChecking: isCheckingStatus,
-    hostInfo: backendConnector.machineName ? { hostname: backendConnector.machineName } : null
+    hostInfo: hostname ? { hostname } : null
   };
 
   return {
@@ -414,11 +356,11 @@ export const usePrinterDetection = (options?: {
     backendConnector,
     isCheckingStatus,
     pairingCode,
-    expiresInSeconds,
+    expiresInSeconds: pairingExpiresInSeconds,
     isGeneratingCode,
     generatePairingCode,
     resetPairing,
-    refreshConnectorStatus,
+    refreshConnectorStatus: () => manualRefresh(storeId),
     scanningProgress,
     scanningMessage,
     detectedPrinters,
@@ -432,7 +374,7 @@ export const usePrinterDetection = (options?: {
     currentError,
     setCurrentError,
     hostStatus,
-    checkHost: refreshConnectorStatus,
+    checkHost: () => manualRefresh(storeId),
     dontShowAgain,
     startScanning,
     startCalibration,

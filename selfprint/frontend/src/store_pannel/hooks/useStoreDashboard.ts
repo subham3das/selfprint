@@ -4,6 +4,7 @@ import { storeDashboardService } from '../services/storeDashboard.service';
 import { storeAuthService } from '../services/storeAuth.service';
 import { QueueTab } from '../types/dashboard.types';
 import { getSocket, joinStoreRoom } from '@/lib/socket';
+import { useConnectorStore } from '../stores/useConnectorStore';
 
 export const useStoreDashboard = (storeId?: string, selectedQueueTab: QueueTab = 'All') => {
   const queryClient = useQueryClient();
@@ -71,7 +72,22 @@ export const useStoreDashboard = (storeId?: string, selectedQueueTab: QueueTab =
       const updateDashboardCache = (event: string, data?: any) => {
         console.log(`[Dashboard] state updated from socket: ${event}`, data);
         
-        // Mutate dashboard state directly for zero REST roundtrips where possible
+        // Mutate dashboard state and shared connector store directly for zero REST roundtrips
+        if (event === 'connector:heartbeat' || event === 'heartbeat') {
+          useConnectorStore.getState().handleSocketHeartbeat(data);
+        } else if (event === 'connector:connected' || event === 'connector_connected') {
+          useConnectorStore.getState().handleSocketConnected(data);
+        } else if (event === 'connector:disconnected' || event === 'connector_disconnected') {
+          useConnectorStore.getState().handleSocketDisconnected(data);
+        } else if (event === 'connector:paired' || event === 'connector_paired') {
+          useConnectorStore.getState().handleSocketPaired(data);
+        } else if (event === 'connector:unpaired' || event === 'connector_unpaired') {
+          useConnectorStore.getState().handleSocketUnpaired();
+        } else if (event === 'printer:updated' || event === 'printers_updated') {
+          const raw = Array.isArray(data?.printers) ? data.printers : (Array.isArray(data) ? data : []);
+          useConnectorStore.getState().handlePrintersUpdated(raw);
+        }
+
         if (event.startsWith('connector:') || event.startsWith('heartbeat') || event.startsWith('printer:')) {
           queryClient.setQueryData(['store-dashboard', storeId], (prev: any) => {
             if (!prev) return prev;

@@ -1,4 +1,4 @@
-﻿import {
+import {
   DetectedPrinter,
   PrinterSetupConfig,
   PrinterErrorType
@@ -54,36 +54,46 @@ export const printerService = {
       const res = await apiClient.get(url, { params });
       if (res.data?.success && (res.data?.data || res.data)) {
         const d = res.data.data || res.data;
-        const rawPhysical = Array.isArray(d.physicalPrinters) ? d.physicalPrinters : [];
+        const rawPhysical = Array.isArray(d.physicalPrinters)
+          ? d.physicalPrinters
+          : (Array.isArray(d.printers) ? d.printers : []);
+
         const count = typeof d.physicalPrinterCount === 'number'
           ? d.physicalPrinterCount
           : (typeof d.printerCount === 'number'
             ? d.printerCount
             : (typeof d.connectedPrinters === 'number' ? d.connectedPrinters : rawPhysical.length));
 
-        const isOnline = Boolean(d.isAlive ?? (d.status === 'ONLINE'));
+        const isOnline = Boolean(
+          d.isAlive ??
+          (d.status === 'ONLINE') ??
+          (d.state === 'READY' || d.state === 'CONNECTED') ??
+          d.socketConnected
+        );
+
+        const isPaired = Boolean(d.paired ?? d.isPaired);
 
         // Structured logging for live printer synchronization audit
         console.groupCollapsed(`[PrinterService:getConnectorStatus] Backend Status (Live Printers: ${count})`);
         console.log('Online State:            ', isOnline ? 'ONLINE' : 'OFFLINE');
-        console.log('Paired:                  ', Boolean(d.paired ?? d.isPaired));
+        console.log('Paired:                  ', isPaired);
         console.log('Connector Reported Count:', count);
         console.log('Physical Printers Array: ', rawPhysical);
         console.log('Raw Payload:             ', d);
         console.groupEnd();
 
         return {
-          paired: Boolean(d.paired ?? d.isPaired),
-          authenticated: Boolean(d.authenticated),
-          socketConnected: Boolean(d.socketConnected),
-          hostRunning: Boolean(d.hostRunning),
-          deviceTokenValid: Boolean(d.deviceTokenValid),
+          paired: isPaired,
+          authenticated: Boolean(d.authenticated ?? isOnline),
+          socketConnected: Boolean(d.socketConnected ?? isOnline),
+          hostRunning: Boolean(d.hostRunning ?? isOnline),
+          deviceTokenValid: Boolean(d.deviceTokenValid ?? isPaired),
           storeId: d.storeId || effectiveStoreId || null,
-          machineName: d.machineName || (d.isAlive ? d.hostname : null),
+          machineName: d.machineName || d.hostname || null,
           physicalPrinterCount: count,
-          connectionState: d.connectionState || (d.paired && d.isAlive ? (count > 0 ? 'READY' : 'CONNECTED') : 'RUNNING_UNPAIRED'),
+          connectionState: d.connectionState || (isPaired && isOnline ? (count > 0 ? 'READY' : 'CONNECTED') : 'RUNNING_UNPAIRED'),
           lastHeartbeat: d.lastHeartbeat,
-          state: d.state || (d.isAlive ? (count > 0 ? 'READY' : 'CONNECTED') : 'OFFLINE'),
+          state: d.state || (isOnline ? (count > 0 ? 'READY' : 'CONNECTED') : (isPaired ? 'INSTALLED_NOT_RUNNING' : 'OFFLINE')),
           printerCount: count,
           isOnline,
           connector: d,
@@ -196,7 +206,7 @@ export const printerService = {
 
       // 408 -> Connector Offline (Heartbeat expired > 35s)
       if (status === 408) {
-        const d = body?.data;
+        const d = body?.data || body;
         const rawPhysical = Array.isArray(d?.physicalPrinters) ? d.physicalPrinters : [];
         const count = typeof d?.physicalPrinterCount === 'number'
           ? d.physicalPrinterCount
@@ -209,7 +219,7 @@ export const printerService = {
           hostRunning: false,
           deviceTokenValid: Boolean(d?.deviceTokenValid),
           storeId: d?.storeId || effectiveStoreId || null,
-          machineName: d?.machineName || null,
+          machineName: d?.machineName || d?.hostname || null,
           physicalPrinterCount: count,
           physicalPrinters: rawPhysical,
           connectionState: 'INSTALLED_NOT_RUNNING',
@@ -319,7 +329,7 @@ export const printerService = {
 
   /**
    * Discovers physical printers registered for this store's connector via live backend telemetry.
-   * Single Source of Truth: The Desktop Connector live heartbeat. Never falls back to cached database records.
+   * Single Source of Truth: The Desktop Connector live heartbeat.
    */
   async detectPrinters(options?: {
     simulateError?: PrinterErrorType;
@@ -329,49 +339,49 @@ export const printerService = {
       throw new Error(options.simulateError);
     }
 
-    try {
-      const status = await this.getConnectorStatus(options?.storeId);
-      
-      if (!status.paired || !status.isOnline) {
-        throw new Error('HostServiceRequired');
-      }
+    const status = await this.getConnectorStatus(options?.storeId);
+    
+    // Check if connector is paired and online
+    const isConnectorAvailable = Boolean(
+      status.paired &&
+      (status.isOnline || status.socketConnected || status.hostRunning || status.connectionState === 'READY' || status.connectionState === 'CONNECTED')
+    );
 
-      const rawPrinters = Array.isArray(status.physicalPrinters) ? status.physicalPrinters : [];
-
-      console.groupCollapsed(`[PrinterService:detectPrinters] Live Detection (${rawPrinters.length} physical printers)`);
-      console.log('Connector Online:       ', status.isOnline);
-      console.log('Raw Printers from Daemon:', rawPrinters);
-      console.groupEnd();
-
-      if (rawPrinters.length === 0) {
-        throw new Error('NoPhysicalPrinterDetected');
-      }
-
-      return rawPrinters.map((p: any) => ({
-        id: p.id || p.deviceId || p.name,
-        name: p.name || p.printerName,
-        brand: p.brand || 'Generic',
-        model: p.model || p.name,
-        type: 'LaserJet',
-        connection: p.connectionType || p.connection || 'USB',
-        port: p.port || 'USB001',
-        isColor: p.capabilities?.isColor ?? p.isColor ?? false,
-        isDuplexSupported: p.capabilities?.isDuplex ?? p.isDuplexSupported ?? true,
-        isAutoCutSupported: p.capabilities?.isAutoCut ?? p.isAutoCutSupported ?? false,
-        isDriverInstalled: true,
-        paperLevel: p.paperLevel ?? 90,
-        inkLevels: { black: p.tonerLevel ?? p.inkLevels?.black ?? 85 },
-        status: p.status === 'ONLINE' || p.isOnline ? 'Online' : 'Offline',
-        firmwareVersion: '1.0.0',
-        serialNumber: p.id || p.name,
-        description: `Installed system driver: ${p.driver || p.name}`
-      }));
-    } catch (err: any) {
-      if (err.message === 'NoPhysicalPrinterDetected' || err.message === 'NoPrinterFound') {
-        throw new Error('NoPhysicalPrinterDetected');
-      }
+    if (!isConnectorAvailable) {
       throw new Error('HostServiceRequired');
     }
+
+    const rawPrinters = Array.isArray(status.physicalPrinters) ? status.physicalPrinters : [];
+
+    console.groupCollapsed(`[PrinterService:detectPrinters] Live Detection (${rawPrinters.length} physical printers)`);
+    console.log('Connector Online:       ', isConnectorAvailable);
+    console.log('Raw Printers from Daemon:', rawPrinters);
+    console.groupEnd();
+
+    if (rawPrinters.length === 0) {
+      throw new Error('NoPhysicalPrinterDetected');
+    }
+
+    return rawPrinters.map((p: any) => ({
+      id: p.id || p.deviceId || p.name,
+      name: p.name || p.printerName,
+      brand: p.brand || 'Generic',
+      model: p.model || p.name,
+      type: 'LaserJet',
+      connection: p.connectionType || p.connection || 'USB',
+      port: p.port || 'USB001',
+      isColor: p.capabilities?.isColor ?? p.isColor ?? false,
+      isDuplexSupported: p.capabilities?.isDuplex ?? p.isDuplexSupported ?? true,
+      isAutoCutSupported: p.capabilities?.isAutoCut ?? p.isAutoCutSupported ?? false,
+      isDriverInstalled: true,
+      paperLevel: p.paperLevel ?? 90,
+      inkLevels: { black: p.tonerLevel ?? p.inkLevels?.black ?? 85 },
+      status: p.status === 'ONLINE' || p.isOnline ? 'Online' : 'Offline',
+      firmwareVersion: '1.0.0',
+      serialNumber: p.id || p.name,
+      description: `Installed system driver: ${p.driver || p.name}`,
+      isVirtual: Boolean(p.isVirtual || p.name?.toLowerCase().includes('virtual') || p.name?.toLowerCase().includes('print to pdf'))
+    }));
   },
 
   /**
@@ -391,12 +401,12 @@ export const printerService = {
         params: { printerId, printerName }
       });
 
-      if (res.data?.success) {
+      if (res.data?.success && res.data?.data) {
         return {
           success: true,
-          paperStatus: res.data?.data?.paperStatus || 'Paper Tray Verified (A4)',
-          tonerStatus: res.data?.data?.tonerStatus || 'Ready & Aligned',
-          message: res.data?.data?.message || 'Calibration command dispatched successfully'
+          paperStatus: res.data.data.paperStatus || 'Paper Tray Verified (A4)',
+          tonerStatus: res.data.data.tonerStatus || 'Ready & Aligned',
+          message: res.data.data.message || 'Calibration completed successfully'
         };
       }
       return {

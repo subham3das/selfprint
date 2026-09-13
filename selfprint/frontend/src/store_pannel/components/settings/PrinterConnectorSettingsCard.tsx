@@ -12,170 +12,153 @@ import {
   Clock
 } from 'lucide-react';
 import { printerService } from '../../services/printer.service';
-import { getSocket } from '@/lib/socket';
 import { useStoreSession } from '../../hooks/useStoreSession';
-
-interface ConnectorTelemetry {
-  paired: boolean;
-  status: 'ONLINE' | 'OFFLINE';
-  state: string;
-  storeName: string;
-  hostname: string;
-  machineId?: string;
-  socketConnected: boolean;
-  authenticated: boolean;
-  hostRunning: boolean;
-  physicalPrinters: number;
-  lastHeartbeat?: string;
-  diffSeconds?: number;
-}
+import { useConnectorStore } from '../../stores/useConnectorStore';
+import { getSocket, joinStoreRoom } from '@/lib/socket';
 
 export const PrinterConnectorSettingsCard: React.FC = () => {
   const storeInfo = useStoreSession();
   const storeId = storeInfo?.id;
 
-  // Live connector state
-  const [telemetry, setTelemetry] = useState<ConnectorTelemetry | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Single Source of Truth from Zustand Store
+  const {
+    paired,
+    isOnline,
+    storeName,
+    hostname,
+    socketConnected,
+    authenticated,
+    hostRunning,
+    physicalPrinterCount,
+    diffSeconds,
+    isCheckingStatus,
+    pairingCode,
+    pairingExpiresInSeconds,
+    isGeneratingCode,
+    codeError,
+    hydrate,
+    manualRefresh,
+    generatePairingCode: storeGenPairingCode,
+    unpairConnector,
+    handleSocketHeartbeat,
+    handleSocketConnected,
+    handleSocketDisconnected,
+    handleSocketPaired,
+    handleSocketUnpaired,
+    handlePrintersUpdated,
+    decrementCountdown
+  } = useConnectorStore();
 
-  // Pairing code state
-  const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [expiresInSeconds, setExpiresInSeconds] = useState<number>(600);
-  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [codeError, setCodeError] = useState<string | null>(null);
   const [installerInfo, setInstallerInfo] = useState<{ version: string; sizeMB: string; fileName: string } | null>(null);
   const [isUnpairing, setIsUnpairing] = useState(false);
 
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ─── Fetch live status strictly from backend ────────────────────────────
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await printerService.getConnectorStatus(storeId);
-      if (res) {
-        const raw = res.connector;
-        const diffMs = res.lastHeartbeat ? Date.now() - new Date(res.lastHeartbeat).getTime() : 999999;
-        const diffSec = Math.max(0, Math.round(diffMs / 1000));
+  // Initial Load (REST once)
+  useEffect(() => {
+    hydrate(storeId);
+    printerService.getInstallerInfo().then((info) => {
+      if (info) setInstallerInfo(info);
+    }).catch(() => {});
+  }, [storeId, hydrate]);
 
-        setTelemetry({
-          paired: res.paired,
-          status: res.isOnline ? 'ONLINE' : 'OFFLINE',
-          state: res.state,
-          storeName: raw?.storeName || storeInfo?.name || 'SelfPrint Store',
-          hostname: raw?.hostname || 'DESKTOP-ASUS',
-          machineId: raw?.machineId,
-          socketConnected: res.socketConnected,
-          authenticated: res.authenticated,
-          hostRunning: Boolean(raw?.hostRunning),
-          physicalPrinters: res.printerCount || 0,
-          lastHeartbeat: res.lastHeartbeat,
-          diffSeconds: diffSec
-        });
-      }
-    } catch (err) {
-      console.warn('Failed to fetch connector status from backend:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [storeId, storeInfo?.name]);
-
-  // ─── Generate 10-minute pairing code strictly from backend ───────────────
+  // Generate pairing code
   const handleGenerateCode = useCallback(async () => {
-    setIsGeneratingCode(true);
-    setCodeError(null);
-    try {
-      const res = await printerService.generatePairingCode(storeId);
-      const code = res.code || res.pairingCode;
-      const seconds = res.expiresInSeconds || 600;
-
-      setPairingCode(code);
-      setExpiresInSeconds(seconds);
-
-      // Start countdown
+    const code = await storeGenPairingCode(storeId);
+    if (code) {
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = setInterval(() => {
-        setExpiresInSeconds((prev) => {
-          if (prev <= 1) {
-            clearInterval(countdownTimerRef.current!);
-            return 0;
-          }
-          return prev - 1;
-        });
+        decrementCountdown();
       }, 1000);
-    } catch (err: any) {
-      setCodeError(err?.message || 'Failed to generate connector code');
-    } finally {
-      setIsGeneratingCode(false);
     }
-  }, [storeId]);
+  }, [storeId, storeGenPairingCode, decrementCountdown]);
 
-  // ─── Unpair / Revoke Connector ───────────────────────────────────────────
+  // Unpair / Revoke Connector
   const handleUnpair = useCallback(async () => {
     if (!window.confirm('Are you sure you want to disconnect this Desktop Connector? You will need to pair it again with a new code.')) {
       return;
     }
     setIsUnpairing(true);
     try {
-      await printerService.unpairConnector(storeId);
-      await fetchStatus();
+      await unpairConnector(storeId);
       handleGenerateCode();
     } catch (err) {
       console.error('Failed to unpair:', err);
     } finally {
       setIsUnpairing(false);
     }
-  }, [storeId, fetchStatus, handleGenerateCode]);
+  }, [storeId, unpairConnector, handleGenerateCode]);
 
-  // Initial load
-  useEffect(() => {
-    fetchStatus();
-    handleGenerateCode();
-    printerService.getInstallerInfo().then((info) => {
-      if (info) setInstallerInfo(info);
-    }).catch(() => {});
-
-    // Real-time event driven (polling interval removed)
-    return () => {
-      
-      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
-    };
-  }, [fetchStatus, handleGenerateCode]);
-
-  // ─── Real-time Socket.IO Listeners ───────────────────────────────────────
+  // Pure WebSocket In-Memory Event Handlers
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
 
-    const handleConnected = () => fetchStatus();
-    const handleDisconnected = () => fetchStatus();
-    const handleHeartbeat = () => fetchStatus();
-    const handlePrintersUpdated = () => fetchStatus();
-    const handlePaired = () => fetchStatus();
+    if (storeId) {
+      joinStoreRoom(storeId);
+    }
 
-    socket.on('connector:connected', handleConnected);
-    socket.on('connector:disconnected', handleDisconnected);
-    socket.on('connector:heartbeat', handleHeartbeat);
-    socket.on('connector:updated', handleConnected);
-    socket.on('connector:paired', handlePaired);
-    socket.on('connector:unpaired', handleDisconnected);
-    socket.on('printer:updated', handlePrintersUpdated);
-    socket.on('connector_connected', handleConnected);
-    socket.on('connector_disconnected', handleDisconnected);
-    socket.on('connector_authenticated', handleConnected);
-    socket.on('heartbeat', handleHeartbeat);
-    socket.on('printers_updated', handlePrintersUpdated);
-    socket.on('connector_paired', handlePaired);
+    const onHeartbeat = (d: any) => handleSocketHeartbeat(d);
+    const onConnected = (d: any) => handleSocketConnected(d);
+    const onDisconnected = (d: any) => handleSocketDisconnected(d);
+    const onPaired = (d: any) => {
+      handleSocketPaired(d);
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    };
+    const onUnpaired = () => handleSocketUnpaired();
+    const onPrinters = (data: any) => {
+      const raw = Array.isArray(data?.printers) ? data.printers : (Array.isArray(data) ? data : []);
+      handlePrintersUpdated(raw);
+    };
+
+    socket.on('connector:heartbeat', onHeartbeat);
+    socket.on('connector:connected', onConnected);
+    socket.on('connector:disconnected', onDisconnected);
+    socket.on('connector:updated', onConnected);
+    socket.on('connector:paired', onPaired);
+    socket.on('connector:unpaired', onUnpaired);
+    socket.on('printer:updated', onPrinters);
+
+    // Fallbacks
+    socket.on('heartbeat', onHeartbeat);
+    socket.on('connector_connected', onConnected);
+    socket.on('connector_disconnected', onDisconnected);
+    socket.on('connector_paired', onPaired);
+    socket.on('connector_unpaired', onUnpaired);
+    socket.on('printers_updated', onPrinters);
 
     return () => {
-      socket.off('connector_connected', handleConnected);
-      socket.off('connector_disconnected', handleDisconnected);
-      socket.off('connector_authenticated', handleConnected);
-      socket.off('heartbeat', handleHeartbeat);
-      socket.off('printers_updated', handlePrintersUpdated);
-      socket.off('connector_paired', handlePaired);
+      socket.off('connector:heartbeat', onHeartbeat);
+      socket.off('connector:connected', onConnected);
+      socket.off('connector:disconnected', onDisconnected);
+      socket.off('connector:updated', onConnected);
+      socket.off('connector:paired', onPaired);
+      socket.off('connector:unpaired', onUnpaired);
+      socket.off('printer:updated', onPrinters);
+
+      socket.off('heartbeat', onHeartbeat);
+      socket.off('connector_connected', onConnected);
+      socket.off('connector_disconnected', onDisconnected);
+      socket.off('connector_paired', onPaired);
+      socket.off('connector_unpaired', onUnpaired);
+      socket.off('printers_updated', onPrinters);
     };
-  }, [fetchStatus]);
+  }, [
+    storeId,
+    handleSocketHeartbeat,
+    handleSocketConnected,
+    handleSocketDisconnected,
+    handleSocketPaired,
+    handleSocketUnpaired,
+    handlePrintersUpdated
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    };
+  }, []);
 
   const copyToClipboard = () => {
     if (!pairingCode) return;
@@ -192,92 +175,108 @@ export const PrinterConnectorSettingsCard: React.FC = () => {
 
   const formatTimeAgo = (seconds?: number) => {
     if (seconds === undefined) return '—';
-    if (seconds < 5) return '2 seconds ago';
+    if (seconds < 5) return 'just now';
     if (seconds < 60) return `${seconds} seconds ago`;
     const mins = Math.floor(seconds / 60);
     return `${mins} ${mins === 1 ? 'minute' : 'minutes'} ago`;
   };
 
-  const isConnected = Boolean(
-    telemetry?.paired &&
-    telemetry?.status === 'ONLINE' &&
-    (telemetry?.diffSeconds !== undefined && telemetry.diffSeconds < 15)
-  );
+  const isConnected = paired && isOnline;
+  const isOffline = paired && !isOnline;
+  const isUnpaired = !paired;
 
   return (
-    <div className="bg-white border border-slate-200/70 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shadow-sm">
+    <div className="bg-white border border-slate-200/80 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+      {/* ── Header ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shadow-xs">
             <Laptop className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-slate-900 tracking-tight">Desktop Connector</h2>
+            <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+              <span>Desktop Connector</span>
+              {isConnected && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <CheckCircle2 className="w-3 h-3" /> Online
+                </span>
+              )}
+              {isOffline && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                  <WifiOff className="w-3 h-3" /> Offline
+                </span>
+              )}
+              {isUnpaired && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                  <AlertCircle className="w-3 h-3" /> Not Paired
+                </span>
+              )}
+            </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Production hardware bridge linking local print spoolers to the cloud
+              Persistent local Windows agent linking your physical USB / Network printers to the cloud.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          {telemetry?.paired && (
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => manualRefresh(storeId)}
+            disabled={isCheckingStatus}
+            className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs active:scale-95 disabled:opacity-50"
+            title="Perform manual diagnostic check"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isCheckingStatus ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+
+          {paired && (
             <button
               onClick={handleUnpair}
               disabled={isUnpairing}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors disabled:opacity-50"
+              className="px-3.5 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs active:scale-95 disabled:opacity-50"
             >
-              <span>{isUnpairing ? 'Unpairing...' : 'Unpair Connector'}</span>
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>{isUnpairing ? 'Disconnecting...' : 'Disconnect Machine'}</span>
             </button>
           )}
-          <button
-            onClick={fetchStatus}
-            disabled={isLoading}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh Status</span>
-          </button>
         </div>
       </div>
 
       {/* ── Status Banner ── */}
       {isConnected ? (
-        <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex items-start gap-3">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+        <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 flex items-center gap-3.5">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <h3 className="text-sm font-bold text-emerald-900">Connected</h3>
-            </div>
+            <h3 className="text-sm font-bold text-emerald-900">
+              Desktop Connector is Active & Ready
+            </h3>
             <p className="text-xs text-emerald-700 mt-0.5">
-              Desktop Connector is online and synchronizing hardware printers in real-time.
+              Host <strong className="font-mono">{hostname || 'Local Machine'}</strong> is actively transmitting telemetry. Cloud print jobs will execute immediately.
             </p>
           </div>
         </div>
-      ) : telemetry?.paired && !telemetry?.hostRunning ? (
-        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-bold text-amber-900">Host Service Offline</h3>
-            <p className="text-xs text-amber-700 mt-0.5">
-              Printers unavailable. Please launch the SelfPrint Connector application on your Windows machine.
-            </p>
+      ) : isOffline ? (
+        <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/80 flex items-center gap-3.5">
+          <div className="w-9 h-9 rounded-xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <WifiOff className="w-5 h-5" />
           </div>
-        </div>
-      ) : telemetry?.paired ? (
-        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-bold text-rose-900">Connector Offline</h3>
+            <h3 className="text-sm font-bold text-rose-900">
+              Desktop Connector is Offline
+            </h3>
             <p className="text-xs text-rose-700 mt-0.5">
-              No heartbeat received in &gt;15s. Last seen: {formatTimeAgo(telemetry.diffSeconds)}.
+              Machine is paired, but no heartbeat was received recently ({formatTimeAgo(diffSeconds)}). Make sure the SelfPrint Connector app or background service is running on <strong className="font-mono">{hostname || 'your computer'}</strong>.
             </p>
           </div>
         </div>
       ) : (
-        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-start gap-3">
-          <WifiOff className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
+        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 flex items-center gap-3.5">
+          <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-600 flex items-center justify-center shrink-0">
+            <Laptop className="w-5 h-5" />
+          </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-bold text-slate-800">Not Connected</h3>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -301,49 +300,49 @@ export const PrinterConnectorSettingsCard: React.FC = () => {
               <span className="text-slate-500">Status</span>
               <span className={`font-bold flex items-center gap-1.5 ${isConnected ? 'text-emerald-600' : 'text-slate-700'}`}>
                 <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                {isConnected ? 'Connected' : telemetry?.paired ? 'Offline' : 'Not Connected'}
+                {isConnected ? 'Connected' : paired ? 'Offline' : 'Not Connected'}
               </span>
             </div>
 
             <div className="py-2.5 flex items-center justify-between">
               <span className="text-slate-500">Store</span>
-              <span className="font-semibold text-slate-900">{telemetry?.storeName || storeInfo?.name || '—'}</span>
+              <span className="font-semibold text-slate-900">{storeName || storeInfo?.name || '—'}</span>
             </div>
 
             <div className="py-2.5 flex items-center justify-between">
               <span className="text-slate-500">Machine</span>
-              <span className="font-mono font-semibold text-slate-800">{telemetry?.hostname || '—'}</span>
+              <span className="font-mono font-semibold text-slate-800">{hostname || '—'}</span>
             </div>
 
             <div className="py-2.5 flex items-center justify-between">
               <span className="text-slate-500">Socket</span>
-              <span className={`font-semibold ${telemetry?.socketConnected ? 'text-emerald-600' : 'text-slate-500'}`}>
-                {telemetry?.socketConnected ? 'Connected' : 'Disconnected'}
+              <span className={`font-semibold ${socketConnected ? 'text-emerald-600' : 'text-slate-500'}`}>
+                {socketConnected ? 'Connected' : 'Disconnected'}
               </span>
             </div>
 
             <div className="py-2.5 flex items-center justify-between">
               <span className="text-slate-500">Backend</span>
-              <span className={`font-semibold ${telemetry?.authenticated ? 'text-emerald-600' : 'text-amber-600'}`}>
-                {telemetry?.authenticated ? 'Authenticated' : 'Pending'}
+              <span className={`font-semibold ${authenticated ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {authenticated ? 'Authenticated' : 'Pending'}
               </span>
             </div>
 
             <div className="py-2.5 flex items-center justify-between">
               <span className="text-slate-500">Host Service</span>
-              <span className={`font-semibold ${telemetry?.hostRunning ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {telemetry?.hostRunning ? 'Running' : 'Stopped'}
+              <span className={`font-semibold ${hostRunning ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {hostRunning ? 'Running' : 'Stopped'}
               </span>
             </div>
 
             <div className="py-2.5 flex items-center justify-between">
               <span className="text-slate-500">Physical Printers</span>
-              <span className="font-bold text-slate-900">{telemetry?.physicalPrinters || 0}</span>
+              <span className="font-bold text-slate-900">{physicalPrinterCount || 0}</span>
             </div>
 
             <div className="py-2.5 flex items-center justify-between last:pb-0">
               <span className="text-slate-500">Last Heartbeat</span>
-              <span className="font-medium text-slate-600">{formatTimeAgo(telemetry?.diffSeconds)}</span>
+              <span className="font-medium text-slate-600">{formatTimeAgo(diffSeconds)}</span>
             </div>
           </div>
         </div>
@@ -388,7 +387,7 @@ export const PrinterConnectorSettingsCard: React.FC = () => {
               <div className="flex items-center gap-1.5 text-slate-500">
                 <Clock className="w-3.5 h-3.5 text-slate-400" />
                 <span>
-                  Valid for: <strong className="text-slate-800">{formatTimer(expiresInSeconds)}</strong>
+                  Valid for: <strong className="text-slate-800">{formatTimer(pairingExpiresInSeconds)}</strong>
                 </span>
               </div>
 
