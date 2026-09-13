@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Monitor } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { StatsGrid } from '../components/StatsCard';
@@ -17,6 +17,7 @@ import { PrinterSettingsModal } from '../components/PrinterSettingsModal';
 import { NetworkErrorBanner } from '../../components/common/NetworkErrorBanner';
 import { usePrinterMonitoring } from '../hooks/usePrinterMonitoring';
 import { useStoreDashboard } from '../hooks/useStoreDashboard';
+import { useStoreSettings } from '../hooks/useStoreSettings';
 import { printerService } from '../services/printer.service';
 import { JobItem, QueueTab, StoreInfo, SummaryBreakdown, PrinterStatusInfo, StatItem } from '../types/dashboard.types';
 
@@ -71,6 +72,7 @@ export const StoreDashboard: React.FC = () => {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Backend Live Dashboard Integration Hook (TanStack Query with 10s auto-refresh)
+  const { settings: storeSettings } = useStoreSettings();
   const {
     dashboardData,
     queueJobs,
@@ -166,7 +168,7 @@ export const StoreDashboard: React.FC = () => {
   const displayQueueJobs: JobItem[] = queueJobs.length > 0 ? queueJobs : (dashboardData?.recentQueue ?? []);
   const activities = dashboardData?.activities ?? [];
   const stockAlerts = dashboardData?.stockAlerts ?? [];
-  const printerStatus: PrinterStatusInfo = dashboardData?.printer
+    const printerStatus: PrinterStatusInfo = dashboardData?.printer
     ? {
         name: dashboardData.printer.name,
         model: dashboardData.printer.model,
@@ -179,6 +181,14 @@ export const StoreDashboard: React.FC = () => {
         ipAddress: dashboardData.printer.ipAddress
       }
     : emptyPrinterStatus;
+
+  const isTestMode = Boolean(
+    storeSettings?.printer?.testMode ||
+    (dashboardData as any)?.settings?.printer?.testMode ||
+    (printerStatus as any)?.isVirtual ||
+    printerStatus?.name?.toLowerCase().includes('pdf') ||
+    printerStatus?.name?.toLowerCase().includes('xps')
+  );
 
   return (
     <div className="flex min-h-screen bg-[#F8FAFC] text-slate-900 font-sans antialiased">
@@ -214,6 +224,35 @@ export const StoreDashboard: React.FC = () => {
             onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
             onOpenQRModal={() => setIsQRModalOpen(true)}
           />
+
+          {/* Test Mode Yellow Alert Banner */}
+          {isTestMode && (
+            <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl shadow-xs flex items-center justify-between gap-3 text-amber-900 animate-in fade-in">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-200/80 text-amber-800 flex items-center justify-center shrink-0">
+                  <Monitor className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 font-bold text-sm">
+                    <span>TEST MODE ENABLED</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-200 text-amber-900 border border-amber-300">
+                      🟡 TEST MODE
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-800 mt-0.5">
+                    Virtual printer is active. No physical printer is required. Generated test files are saved into <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold text-amber-900">Documents \ SelfPrint \ Test Prints</code>.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/store/settings')}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shrink-0 transition-colors shadow-xs cursor-pointer"
+              >
+                Settings
+              </button>
+            </div>
+          )}
 
           {/* Error Banner with Retry (Only shown on actual offline/server errors, NEVER on empty database) */}
           {isError && (

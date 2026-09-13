@@ -725,25 +725,43 @@ export const StoreViewModal: React.FC<StoreViewModalProps> = ({
 
           {activeTab === 'connector' && (
             <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col gap-4">
-              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <Printer className="w-4 h-4 text-indigo-600" />
-                <span>Connector Hardware & Telemetry</span>
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex flex-col gap-2">
-                  <span className="text-slate-400 font-bold uppercase text-[10px]">Active Connector</span>
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-800">Desktop Connector Daemon</span>
-                    <span className="text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 text-[10px]">Online</span>
-                  </div>
-                  <span className="text-[11px] text-slate-500 font-mono">ID: {store.storeIdCode}-DAEMON</span>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <Printer className="w-4 h-4 text-indigo-600" />
+                  <span>Printer Status & Hardware Diagnostics</span>
+                </h4>
+                {((store as any).printerName?.toLowerCase().includes('pdf') || (store as any).printerName?.toLowerCase().includes('xps') || (store as any).printerName?.toLowerCase().includes('virtual')) && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    🟡 TEST MODE
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex flex-col gap-1.5">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">Printer</span>
+                  <span className="font-bold text-slate-800 text-sm truncate">{(store as any).printerName || 'Microsoft Print to PDF'}</span>
+                  <span className="text-[11px] text-slate-500">Active Device</span>
                 </div>
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex flex-col gap-2">
-                  <span className="text-slate-400 font-bold uppercase text-[10px]">Physical Printers</span>
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-800">{store.printerCount} Configured Units</span>
-                    <span className="text-slate-500 text-[11px]">Default: Direct Spooler</span>
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex flex-col gap-1.5">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">Type</span>
+                  <span className="font-bold text-slate-800 text-sm">
+                    {(store as any).printerName?.toLowerCase().includes('pdf') || (store as any).printerName?.toLowerCase().includes('xps') ? 'Virtual' : 'Physical'}
+                  </span>
+                  <span className="text-[11px] text-slate-500">Windows Spooler / Driver</span>
+                </div>
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex flex-col gap-1.5">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">Mode</span>
+                  <div>
+                    <span className={`inline-block px-2 py-0.5 rounded-md font-bold text-[11px] ${
+                      (store as any).printerName?.toLowerCase().includes('pdf') || (store as any).printerName?.toLowerCase().includes('xps')
+                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                        : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                    }`}>
+                      {(store as any).printerName?.toLowerCase().includes('pdf') || (store as any).printerName?.toLowerCase().includes('xps') ? 'Test' : 'Production'}
+                    </span>
                   </div>
+                  <span className="text-[11px] text-slate-500">Execution Pipeline</span>
                 </div>
               </div>
             </div>

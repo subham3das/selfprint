@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import { settingsRepository, SettingsRepository } from './settings.repository';
 import { StoreFullSettingsDto, SystemInfoDto } from './settings.types';
+import { socketManager } from '../../../socket';
+import { logger } from '../../../utils/logger';
 
 export class SettingsService {
   private repository: SettingsRepository;
@@ -30,6 +32,7 @@ export class SettingsService {
       doubleSidedDefault: settingsDoc.printer?.doubleSidedDefault ?? false,
       paperSaveMode: settingsDoc.printer?.paperSaveMode ?? false,
       isPaused: settingsDoc.printer?.isPaused ?? false,
+      testMode: settingsDoc.printer?.testMode ?? false,
       paperStatus: (printerDoc?.paperLevel && printerDoc.paperLevel < 20 ? 'Low' : 'Full') as any,
       inkStatus: (printerDoc?.tonerLevel && printerDoc.tonerLevel < 20 ? 'Low' : 'Full') as any
     };
@@ -161,7 +164,25 @@ export class SettingsService {
     if (!store) return null;
 
     await this.repository.updateStoreSettings(store._id, { printer: input });
-    return this.getFullSettings(storeIdParam);
+    const full = await this.getFullSettings(storeIdParam);
+
+    if (input.testMode !== undefined) {
+      logger.info(`[TestMode] Store ${store._id} testMode updated to ${input.testMode}`);
+      socketManager.emitToStore(store._id.toString(), 'store:testModeChanged', {
+        storeId: store._id.toString(),
+        testMode: Boolean(input.testMode)
+      });
+      socketManager.emitToStore(store._id.toString(), 'test_mode_changed', {
+        storeId: store._id.toString(),
+        testMode: Boolean(input.testMode)
+      });
+    }
+
+    if (full) {
+      socketManager.emitToStore(store._id.toString(), 'store:settingsUpdated', full);
+    }
+
+    return full;
   }
 
   public async updatePreferencesSettings(storeIdParam: string | undefined, input: any): Promise<StoreFullSettingsDto | null> {

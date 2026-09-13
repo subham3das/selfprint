@@ -22,6 +22,7 @@ export interface PrinterSettingsConfig {
   doubleSidedDefault: boolean;
   paperSaveMode: boolean;
   isPaused: boolean;
+  testMode?: boolean;
   paperStatus: 'Full' | 'Medium' | 'Low';
   inkStatus: 'Full' | 'Medium' | 'Low';
 }

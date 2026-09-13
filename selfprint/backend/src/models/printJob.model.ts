@@ -38,6 +38,8 @@ export interface IPrintJob {
   completedAt?: Date;
   price: number;
   paymentStatus: PaymentStatusType;
+  isTestMode?: boolean;
+  testMode?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -147,6 +149,14 @@ const printJobSchema = new Schema<IPrintJob>(
       type: String,
       enum: ['Paid', 'Pending', 'Failed', 'Refunded', 'PAID', 'PENDING', 'FAILED'],
       default: 'Paid'
+    },
+    isTestMode: {
+      type: Boolean,
+      default: false
+    },
+    testMode: {
+      type: Boolean,
+      default: false
     }
   },
   {

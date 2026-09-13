@@ -114,6 +114,14 @@ export const useStoreDashboard = (storeId?: string, selectedQueueTab: QueueTab =
       socket.on('queue:cancelled', (d) => updateDashboardCache('queue:cancelled', d));
       socket.on('queue:status', (d) => updateDashboardCache('queue:status', d));
       socket.on('notification:new', (d) => updateDashboardCache('notification:new', d));
+      socket.on('store:testModeChanged', () => {
+        queryClient.invalidateQueries({ queryKey: ['store-dashboard', storeId] });
+        queryClient.invalidateQueries({ queryKey: ['storeFullSettings'] });
+      });
+      socket.on('test_mode_changed', () => {
+        queryClient.invalidateQueries({ queryKey: ['store-dashboard', storeId] });
+        queryClient.invalidateQueries({ queryKey: ['storeFullSettings'] });
+      });
 
       // Legacy fallback listeners
       socket.on('heartbeat', (d) => updateDashboardCache('heartbeat', d));
@@ -139,6 +147,8 @@ export const useStoreDashboard = (storeId?: string, selectedQueueTab: QueueTab =
         socket.off('queue:cancelled');
         socket.off('queue:status');
         socket.off('notification:new');
+        socket.off('store:testModeChanged');
+        socket.off('test_mode_changed');
 
         socket.off('heartbeat');
         socket.off('connector_connected');

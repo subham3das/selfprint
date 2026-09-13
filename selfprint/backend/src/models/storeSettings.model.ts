@@ -66,6 +66,7 @@ export interface IStoreSettings {
     doubleSidedDefault: boolean;
     paperSaveMode: boolean;
     isPaused: boolean;
+    testMode?: boolean;
   };
   maxFileUploadSizeMB: number;
   allowGuestPrints: boolean;
@@ -143,7 +144,8 @@ const storeSettingsSchema = new Schema<IStoreSettings>(
       autoStartAfterPayment: { type: Boolean, default: true },
       doubleSidedDefault: { type: Boolean, default: false },
       paperSaveMode: { type: Boolean, default: false },
-      isPaused: { type: Boolean, default: false }
+      isPaused: { type: Boolean, default: false },
+      testMode: { type: Boolean, default: false }
     },
     maxFileUploadSizeMB: { type: Number, default: 50 },
     allowGuestPrints: { type: Boolean, default: true },
