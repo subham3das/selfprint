@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import { AdminNavRoute } from '../types/admin.types';
+import { AdminStoreItem } from '../types/store.types';
 import { useStores } from '../hooks/useStores';
 import { AdminSidebar } from '../components/Sidebar/AdminSidebar';
 import { AdminHeader } from '../components/Header/AdminHeader';
@@ -13,6 +14,8 @@ import { StorePagination } from '../components/StorePagination';
 import { StoreViewModal } from '../components/StoreViewModal';
 import { StoreEditModal } from '../components/StoreEditModal';
 import { StoreCreateModal } from '../components/StoreCreateModal';
+import { StoreDeleteModal } from '../components/StoreDeleteModal';
+import { StoreBlockModal } from '../components/StoreBlockModal';
 
 export const AdminStoresPage: React.FC = () => {
   const navigate = useNavigate();
@@ -41,12 +44,19 @@ export const AdminStoresPage: React.FC = () => {
     setViewingStore,
     editingStore,
     setEditingStore,
+    blockingStore,
+    setBlockingStore,
+    deletingStore,
+    setDeletingStore,
     isCreateModalOpen,
     setIsCreateModalOpen,
     handleCreateStore,
     handleUpdateStore,
-    handleToggleStoreStatus,
-    handleDeleteStore
+    handleBlockStore,
+    handleUnblockStore,
+    handleDeleteStore,
+    isBlockingLoading,
+    isDeletingLoading
   } = useStores();
 
   const handleSidebarNav = (route: AdminNavRoute) => {
@@ -151,11 +161,11 @@ export const AdminStoresPage: React.FC = () => {
           ) : (
             <StoreTable
               stores={paginatedStores}
-              onViewStore={(s) => setViewingStore(s)}
-              onEditStore={(s) => setEditingStore(s)}
-              onToggleStatus={handleToggleStoreStatus}
-              onDeleteStore={handleDeleteStore}
-              onGenerateQr={(s) => setViewingStore(s)}
+              onViewStore={(s: AdminStoreItem) => setViewingStore(s)}
+              onEditStore={(s: AdminStoreItem) => setEditingStore(s)}
+              onBlockStore={(s: AdminStoreItem) => setBlockingStore(s)}
+              onUnblockStore={(s: AdminStoreItem) => handleUnblockStore(s.id)}
+              onDeleteStore={(s: AdminStoreItem) => setDeletingStore(s)}
             />
           )}
 
@@ -202,6 +212,28 @@ export const AdminStoresPage: React.FC = () => {
             isOpen={isCreateModalOpen}
             onClose={() => setIsCreateModalOpen(false)}
             onCreate={handleCreateStore}
+          />
+        )}
+
+        {/* Block Store Modal */}
+        {blockingStore && (
+          <StoreBlockModal
+            store={blockingStore}
+            isOpen={Boolean(blockingStore)}
+            isLoading={isBlockingLoading}
+            onClose={() => setBlockingStore(null)}
+            onConfirmBlock={(storeId, reason) => handleBlockStore(storeId, reason)}
+          />
+        )}
+
+        {/* Permanent Delete Store Modal */}
+        {deletingStore && (
+          <StoreDeleteModal
+            store={deletingStore}
+            isOpen={Boolean(deletingStore)}
+            isLoading={isDeletingLoading}
+            onClose={() => setDeletingStore(null)}
+            onConfirmDelete={(storeId) => handleDeleteStore(storeId)}
           />
         )}
       </AnimatePresence>

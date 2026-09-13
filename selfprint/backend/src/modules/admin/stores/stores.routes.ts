@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { adminStoresController } from './stores.controller';
 import { authenticate } from '../../../middlewares/auth.middleware';
 import { authorize } from '../../../middlewares/permission.middleware';
@@ -7,7 +7,7 @@ const adminStoresRouter = Router();
 
 /**
  * @route   GET /api/v1/admin/stores/stats
- * @desc    KPI Dashboard aggregated metrics (Total, Active, Offline, Pending, Suspended, Cities)
+ * @desc    KPI Dashboard aggregated metrics (Total, Active, Offline, Pending, Suspended, Blocked, Deleted, Cities)
  */
 adminStoresRouter.get(
   '/stats',
@@ -72,8 +72,30 @@ adminStoresRouter.patch(
 );
 
 /**
+ * @route   POST /api/v1/admin/stores/:id/block
+ * @desc    Block store from platform, invalidating active tokens and sockets
+ */
+adminStoresRouter.post(
+  '/:id/block',
+  authenticate,
+  authorize('stores', 'edit'),
+  adminStoresController.blockStore
+);
+
+/**
+ * @route   POST /api/v1/admin/stores/:id/unblock
+ * @desc    Unblock store to restore full operational access
+ */
+adminStoresRouter.post(
+  '/:id/unblock',
+  authenticate,
+  authorize('stores', 'edit'),
+  adminStoresController.unblockStore
+);
+
+/**
  * @route   DELETE /api/v1/admin/stores/:id
- * @desc    Soft-delete / deactivate store
+ * @desc    Permanent delete store with cascading cleanup & audit preservation
  */
 adminStoresRouter.delete(
   '/:id',

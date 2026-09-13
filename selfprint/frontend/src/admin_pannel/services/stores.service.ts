@@ -1,4 +1,4 @@
-import { apiClient } from '@/lib/axios';
+﻿import { apiClient } from '@/lib/axios';
 import {
   AdminStoreItem,
   StoreStatsData,
@@ -63,7 +63,7 @@ export const adminStoresService = {
       pincode: data.pincode,
       plan: data.plan,
       commissionRate: data.commissionRate,
-      status: data.status === 'Online' ? 'ACTIVE' : data.status === 'Suspended' ? 'SUSPENDED' : 'INACTIVE',
+      status: data.status === 'Online' || data.status === 'Active' ? 'ACTIVE' : data.status === 'Suspended' ? 'SUSPENDED' : 'INACTIVE',
       printerCount: data.printerCount
     };
     const res = await apiClient.post('/admin/stores', payload);
@@ -101,7 +101,23 @@ export const adminStoresService = {
   },
 
   /**
-   * Soft-delete / deactivate store
+   * Block store from platform
+   */
+  async blockStore(id: string, reason: string) {
+    const res = await apiClient.post(`/admin/stores/${id}/block`, { reason });
+    return res.data?.data;
+  },
+
+  /**
+   * Unblock store to restore platform access
+   */
+  async unblockStore(id: string) {
+    const res = await apiClient.post(`/admin/stores/${id}/unblock`);
+    return res.data?.data;
+  },
+
+  /**
+   * Permanently delete store with complete database cleanup
    */
   async deleteStore(id: string) {
     const res = await apiClient.delete(`/admin/stores/${id}`);

@@ -1,4 +1,4 @@
-import { ApiError } from './ApiError';
+﻿import { ApiError } from './ApiError';
 import { HTTP_STATUS } from '../constants/httpStatusCodes';
 import { ERROR_CODES } from '../constants/errorCodes';
 
@@ -38,8 +38,25 @@ export class GoneError extends ApiError {
   }
 }
 
-export class ValidationError extends ApiError {
+export class StoreBlockedError extends ApiError {
+  constructor(
+    message = 'Your store has been blocked by the administrator. Please contact support.',
+    details?: any
+  ) {
+    super(message, HTTP_STATUS.FORBIDDEN, 'STORE_BLOCKED', details);
+  }
+}
 
+export class StoreDeletedError extends ApiError {
+  constructor(
+    message = 'This store has been deleted by the administrator.',
+    details?: any
+  ) {
+    super(message, HTTP_STATUS.FORBIDDEN, 'STORE_DELETED', details);
+  }
+}
+
+export class ValidationError extends ApiError {
   constructor(
     message = 'Validation Failed',
     errors: Record<string, string> = {},

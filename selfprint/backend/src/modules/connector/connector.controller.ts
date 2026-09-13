@@ -27,6 +27,25 @@ export class ConnectorController {
         return;
       }
 
+      const store = await StoreModel.findById(storeId);
+      if (!store || store.isDeleted || store.status === 'DELETED') {
+        res.status(403).json({
+          success: false,
+          code: 'STORE_DELETED',
+          message: 'This store has been deleted by the administrator.'
+        });
+        return;
+      }
+
+      if (store.blocked || store.status === 'BLOCKED') {
+        res.status(403).json({
+          success: false,
+          code: 'STORE_BLOCKED',
+          message: 'Your store has been blocked by the administrator. Please contact support.'
+        });
+        return;
+      }
+
       // Invalidate existing unused pairing codes for this store
       await PairingCodeModel.updateMany(
         { storeId, used: false },
@@ -40,7 +59,6 @@ export class ConnectorController {
       for (let i = 0; i < 6; i++) {
         randomCode += chars[bytes[i] % chars.length];
       }
-      const store = await StoreModel.findById(storeId);
       const pairingCode = `SP-${randomCode}`;
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
@@ -48,8 +66,8 @@ export class ConnectorController {
         code: pairingCode,
         pairingCode,
         storeId,
-        storeName: store?.name || 'SelfPrint Store',
-        merchantId: store?._id || null,
+        storeName: store.name || 'SelfPrint Store',
+        merchantId: store._id || null,
         expiresAt,
         used: false
       });
@@ -133,11 +151,22 @@ export class ConnectorController {
       }
 
       const store = await StoreModel.findById(codeRecord.storeId);
-      if (!store) {
-        res.status(404).json({
+      if (!store || store.isDeleted || store.status === 'DELETED') {
+        res.status(403).json({
           success: false,
-          error: 'Store Not Found',
-          message: 'The store linked to this pairing code could not be found.'
+          code: 'STORE_DELETED',
+          error: 'Store Deleted',
+          message: 'This store has been deleted by the administrator.'
+        });
+        return;
+      }
+
+      if (store.blocked || store.status === 'BLOCKED') {
+        res.status(403).json({
+          success: false,
+          code: 'STORE_BLOCKED',
+          error: 'Store Blocked',
+          message: 'Your store has been blocked by the administrator. Please contact support.'
         });
         return;
       }
@@ -323,173 +352,95 @@ export class ConnectorController {
       if (!storeId) {
         res.status(400).json({
           success: false,
-          code: 'STORE_ID_REQUIRED',
-          message: 'Store ID is required.'
+          error: 'Store ID is required'
         });
         return;
       }
 
-      if (!mongoose.Types.ObjectId.isValid(storeId)) {
-        res.status(400).json({
+      const store = await StoreModel.findById(storeId);
+      if (!store || store.isDeleted || store.status === 'DELETED') {
+        res.status(403).json({
           success: false,
-          code: 'INVALID_STORE_ID',
-          message: 'Valid Store ObjectId is required.'
+          code: 'STORE_DELETED',
+          message: 'This store has been deleted by the administrator.'
         });
         return;
       }
 
-      const connector = await ConnectorModel.findOne({ storeId }).sort({ updatedAt: -1 });
+      if (store.blocked || store.status === 'BLOCKED') {
+        res.status(403).json({
+          success: false,
+          code: 'STORE_BLOCKED',
+          message: 'Your store has been blocked by the administrator. Please contact support.'
+        });
+        return;
+      }
 
+      const connector = await ConnectorModel.findOne({ storeId });
       if (!connector) {
-        res.status(404).json({
-          success: false,
-          code: 'CONNECTOR_NOT_PAIRED',
-          message: 'No connector is paired with this store.',
-          data: {
-            paired: false,
-            isPaired: false,
-            authenticated: false,
-            socketConnected: false,
-            hostRunning: false,
-            deviceTokenValid: false,
-            storeId,
-            machineName: null,
-            physicalPrinterCount: 0,
-            physicalPrinters: [],
-            connectionState: 'RUNNING_UNPAIRED',
-            state: 'NOT_PAIRED',
-            status: 'OFFLINE',
-            printerCount: 0
-          }
+        res.status(200).json({
+          success: true,
+          paired: false,
+          status: 'UNPAIRED',
+          state: 'UNPAIRED',
+          message: 'No connector is currently paired with this store'
         });
         return;
       }
 
-      // Check heartbeat freshness: alive if < 35 seconds (allows grace period for 10s intervals + jitter)
-      const diffMs = Date.now() - new Date(connector.lastHeartbeat).getTime();
-      const isAlive = diffMs < 35000;
-      const effectiveStatus = isAlive ? connector.status : 'OFFLINE';
-      const effectiveState = isAlive ? (connector.state || 'READY') : 'OFFLINE';
+      // Check heartbeat freshness: offline if lastHeartbeat is older than 35 seconds
+      const now = Date.now();
+      const lastHbTime = connector.lastHeartbeat ? new Date(connector.lastHeartbeat).getTime() : 0;
+      const isOnline = lastHbTime > 0 && (now - lastHbTime) < 35000;
 
-      // Extract physical printers strictly as array and compute exact count
-      const rawPhysical = Array.isArray(connector.physicalPrinters)
-        ? connector.physicalPrinters
-        : [];
-      const printerCount = typeof connector.connectedPrinters === 'number'
-        ? connector.connectedPrinters
-        : rawPhysical.length;
-
-      // Determine state machine representation
-      const connectionState = !isAlive
-        ? 'INSTALLED_NOT_RUNNING'
-        : effectiveState === 'SCANNING_PRINTERS'
-        ? 'SCANNING_PRINTERS'
-        : printerCount > 0
-        ? 'READY'
-        : 'CONNECTED';
-
-      logger.info(`[Connector Status API] Store ${storeId} -> isAlive=${isAlive}, status=${effectiveStatus}, printerCount=${printerCount}, physicalPrinters=${JSON.stringify(rawPhysical.map((p: any) => p.name || p.printerName || p.id))}`);
-
-      if (!isAlive) {
-        res.status(408).json({
-          success: false,
-          code: 'CONNECTOR_OFFLINE',
-          message: 'Connector heartbeat expired.',
-          data: {
-            paired: true,
-            isPaired: true,
-            authenticated: false,
-            socketConnected: false,
-            hostRunning: false,
-            deviceTokenValid: Boolean(connector.deviceToken),
-            storeId: connector.storeId,
-            machineName: connector.hostname,
-            physicalPrinterCount: printerCount,
-            physicalPrinters: rawPhysical,
-            connectionState,
-            lastHeartbeat: connector.lastHeartbeat,
-            state: effectiveState,
-            printerCount,
-            connectorId: connector.connectorId,
-            hostname: connector.hostname,
-            version: connector.version,
-            status: effectiveStatus,
-            isAlive: false,
-            lastHeartbeatSecondsAgo: Math.round(diffMs / 1000),
-            health: connector.health,
-            connectedPrinters: printerCount
-          }
-        });
-        return;
-      }
+      const liveStatus = isOnline ? 'ONLINE' : 'OFFLINE';
+      const liveState = isOnline ? 'CONNECTED' : 'DISCONNECTED';
 
       res.status(200).json({
         success: true,
-        code: 'CONNECTOR_ONLINE',
-        message: 'Connector is online and authenticated.',
-        data: {
-          paired: true,
-          isPaired: true,
-          authenticated: connector.authenticated ?? true,
-          socketConnected: connector.socketConnected ?? true,
-          hostRunning: connector.hostRunning ?? true,
-          deviceTokenValid: Boolean(connector.deviceToken),
-          storeId: connector.storeId,
-          machineName: connector.hostname,
-          physicalPrinterCount: printerCount,
-          physicalPrinters: rawPhysical,
-          connectionState,
-          lastHeartbeat: connector.lastHeartbeat,
-          state: effectiveState,
-          printerCount,
-          connectorId: connector.connectorId,
-          hostname: connector.hostname,
-          version: connector.version,
-          status: effectiveStatus,
-          isAlive: true,
-          lastHeartbeatSecondsAgo: Math.round(diffMs / 1000),
-          health: connector.health,
-          connectedPrinters: printerCount
-        }
+        paired: true,
+        connectorId: connector.connectorId,
+        storeId: connector.storeId,
+        storeName: connector.storeName,
+        machineName: connector.hostname || connector.machineName,
+        hostname: connector.hostname,
+        os: connector.os || connector.operatingSystem,
+        operatingSystem: connector.operatingSystem || connector.os,
+        version: connector.version || connector.connectorVersion,
+        connectorVersion: connector.connectorVersion || connector.version,
+        status: liveStatus,
+        state: liveState,
+        lastHeartbeat: connector.lastHeartbeat,
+        pairedAt: connector.pairedAt,
+        connectedPrinters: connector.connectedPrinters || (connector.physicalPrinters?.length ?? 0),
+        physicalPrinters: connector.physicalPrinters || [],
+        localIp: connector.localIp,
+        publicIp: connector.publicIp
       });
     } catch (err: any) {
-      logger.error('Error fetching connector status:', err);
+      logger.error('Error retrieving connector status:', err);
       res.status(500).json({
         success: false,
-        code: 'BACKEND_ERROR',
-        message: 'Failed to fetch connector status'
+        error: 'Failed to get connector status'
       });
     }
   }
 
   /**
-   * Ingests 10-second rich telemetry heartbeat from Desktop Connector.
+   * Records heartbeat from Desktop Connector daemon and updates live hardware state.
    * POST /api/v1/connectors/heartbeat
    */
   public async recordHeartbeat(req: Request, res: Response): Promise<void> {
     try {
       const {
-        deviceToken,
         connectorId,
-        storeId,
-        socketConnected,
-        authenticated,
-        hostRunning,
-        physicalPrinters,
-        physicalPrinterCount,
+        printers,
+        connectedPrinters,
+        status,
+        state,
         machineId,
         version,
-        connectorVersion,
-        latency,
-        state,
-        hostState,
-        cpu,
-        ram,
-        disk,
-        spooler,
-        internet,
-        printers,
-        timestamp
+        deviceToken
       } = req.body;
 
       if (!connectorId && !deviceToken) {
@@ -497,91 +448,66 @@ export class ConnectorController {
         return;
       }
 
-      // Live physical printers array reported by Desktop Connector
-      const livePrinters: any[] = Array.isArray(physicalPrinters)
-        ? physicalPrinters
-        : (Array.isArray(printers) ? printers : []);
-      const count = typeof physicalPrinterCount === 'number'
-        ? physicalPrinterCount
-        : livePrinters.length;
-
-      const isHostAlive = hostRunning !== undefined ? hostRunning : (hostState === 'RUNNING' || hostState === true);
-      const isAuth = authenticated !== undefined ? authenticated : true;
-      const isSocket = socketConnected !== undefined ? socketConnected : true;
-
-      const updateData: any = {
-        lastHeartbeat: new Date(),
-        lastSeen: new Date(),
-        status: 'ONLINE',
-        state: state || ((isHostAlive && isAuth && isSocket) ? 'READY' : 'CONNECTED'),
-        hostRunning: isHostAlive,
-        authenticated: isAuth,
-        socketConnected: isSocket,
-        version: version || connectorVersion || '1.0.0',
-        connectedPrinters: count,
-        physicalPrinters: livePrinters,
-        health: {
-          cpuUsagePercent: cpu || 0,
-          memoryMB: ram?.processRssMB || ram?.usedMB || 0,
-          diskGB: disk?.freeGB || 0,
-          printSpoolerStatus: spooler || 'Running',
-          hasInternet: internet !== undefined ? internet : true,
-          latencyMs: latency || null,
-          activeQueueSize: 0
-        }
-      };
-
-      if (machineId) {
-        updateData.machineId = machineId;
-      }
-
       const query: any = connectorId ? { connectorId } : { deviceToken };
-      if (storeId && mongoose.Types.ObjectId.isValid(storeId)) {
-        query.storeId = storeId;
+      const connector = await ConnectorModel.findOne(query);
+
+      if (!connector) {
+        res.status(404).json({ success: false, error: 'Connector not registered or paired' });
+        return;
       }
 
-      // If connector is already paired in DB, keep authenticated true even if daemon token sync was delayed
-      const existingConn = await ConnectorModel.findOne(query);
-      if (existingConn && existingConn.deviceToken) {
-        updateData.authenticated = true;
-        if (updateData.state === 'NOT_PAIRED') {
-          updateData.state = 'READY';
-        }
-      }
-
-      const connector = await ConnectorModel.findOneAndUpdate(
-        query,
-        { $set: updateData },
-        { new: true }
-      );
-
-      if (connector) {
-        logger.info(`[Heartbeat Ingest] Connector ${connectorId || connector.connectorId} (store: ${connector.storeId}) reported ${count} physical printer(s): ${JSON.stringify(livePrinters.map((p: any) => p.name || p.printerName || p.id))}`);
-        logger.info(`[Status updated in MongoDB] Connector ${connectorId || connector.connectorId} status updated: status=${updateData.status}, state=${updateData.state}, connectedPrinters=${count}`);
-
-        connectorRegistry.recordHeartbeat(connectorId, updateData.health);
-
-        // Broadcast heartbeat event to store room with full fields
-        socketManager.emitToStore(connector.storeId.toString(), 'heartbeat', {
-          connectorId: connector.connectorId,
-          storeId: connector.storeId.toString(),
-          status: 'ONLINE',
-          state: updateData.state,
-          paired: true,
-          authenticated: updateData.authenticated,
-          socketConnected: updateData.socketConnected,
-          hostRunning: updateData.hostRunning,
-          printerCount: count,
-          printersCount: count,
-          physicalPrinterCount: count,
-          printers: livePrinters,
-          physicalPrinters: livePrinters,
-          lastHeartbeat: updateData.lastHeartbeat,
-          health: updateData.health,
-          timestamp: timestamp || new Date().toISOString()
+      const store = await StoreModel.findById(connector.storeId);
+      if (!store || store.isDeleted || store.status === 'DELETED') {
+        res.status(403).json({
+          success: false,
+          code: 'STORE_DELETED',
+          error: 'This store has been deleted by the administrator.'
         });
+        return;
+      }
 
-        // Always broadcast printers_updated so web dashboard immediately reflects live count (0 or more)
+      if (store.blocked || store.status === 'BLOCKED') {
+        res.status(403).json({
+          success: false,
+          code: 'STORE_BLOCKED',
+          error: 'Your store has been blocked by the administrator. Please contact support.'
+        });
+        return;
+      }
+
+      // Live physical printers directly from connector scan
+      const livePrinters = Array.isArray(printers) ? printers : [];
+      const count = typeof connectedPrinters === 'number' ? connectedPrinters : livePrinters.length;
+
+      // Update connector heartbeat and physical printers list in MongoDB
+      connector.lastHeartbeat = new Date();
+      connector.lastSeen = new Date();
+      connector.status = status || 'ONLINE';
+      connector.state = state || 'CONNECTED';
+      connector.connectedPrinters = count;
+      connector.physicalPrinters = livePrinters;
+      if (machineId) connector.machineId = machineId;
+      if (version) {
+        connector.version = version;
+        connector.connectorVersion = version;
+      }
+      await connector.save();
+
+      // Sync physical printers to PrinterModel in database
+      if (livePrinters.length >= 0) {
+        try {
+          const { printerService } = await import('../printer/printer.service');
+          await printerService.syncPrinters(
+            connector.storeId.toString(),
+            connector.connectorId,
+            connector.machineId,
+            livePrinters
+          );
+        } catch (syncErr) {
+          logger.warn('[Heartbeat] Printer sync error:', syncErr);
+        }
+
+        // Broadcast live printers to store dashboard
         socketManager.emitToStore(connector.storeId.toString(), 'printers_updated', {
           connectorId: connector.connectorId,
           storeId: connector.storeId.toString(),
@@ -611,6 +537,25 @@ export class ConnectorController {
         res.status(400).json({
           success: false,
           error: 'command and storeId are required'
+        });
+        return;
+      }
+
+      const store = await StoreModel.findById(storeId);
+      if (!store || store.isDeleted || store.status === 'DELETED') {
+        res.status(403).json({
+          success: false,
+          code: 'STORE_DELETED',
+          message: 'This store has been deleted by the administrator.'
+        });
+        return;
+      }
+
+      if (store.blocked || store.status === 'BLOCKED') {
+        res.status(403).json({
+          success: false,
+          code: 'STORE_BLOCKED',
+          message: 'Your store has been blocked by the administrator. Please contact support.'
         });
         return;
       }
@@ -667,11 +612,22 @@ export class ConnectorController {
       }
 
       const store = await StoreModel.findById(connector.storeId);
-      if (!store) {
-        res.status(404).json({
+      if (!store || store.isDeleted || store.status === 'DELETED') {
+        res.status(403).json({
           success: false,
           valid: false,
-          error: 'Associated store not found'
+          code: 'STORE_DELETED',
+          error: 'This store has been deleted by the administrator.'
+        });
+        return;
+      }
+
+      if (store.blocked || store.status === 'BLOCKED') {
+        res.status(403).json({
+          success: false,
+          valid: false,
+          code: 'STORE_BLOCKED',
+          error: 'Your store has been blocked by the administrator. Please contact support.'
         });
         return;
       }

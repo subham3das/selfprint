@@ -1,4 +1,4 @@
-import mongoose, { Schema, Model } from 'mongoose';
+﻿import mongoose, { Schema, Model } from 'mongoose';
 
 export type PrintJobStatus =
   | 'Waiting'
@@ -18,7 +18,9 @@ export type PaymentStatusType = 'Paid' | 'Pending' | 'Failed' | 'Refunded' | 'PA
 
 export interface IPrintJob {
   _id: mongoose.Types.ObjectId;
-  storeId: mongoose.Types.ObjectId;
+  storeId?: mongoose.Types.ObjectId | null;
+  deletedStoreId?: string | null;
+  deletedStoreName?: string | null;
   userId?: mongoose.Types.ObjectId | null;
   jobNumber: string;
   fileName: string;
@@ -45,7 +47,16 @@ const printJobSchema = new Schema<IPrintJob>(
     storeId: {
       type: Schema.Types.ObjectId,
       ref: 'Store',
-      required: [true, 'Store ID is required']
+      default: null
+    },
+    deletedStoreId: {
+      type: String,
+      default: null,
+      index: true
+    },
+    deletedStoreName: {
+      type: String,
+      default: null
     },
     userId: {
       type: Schema.Types.ObjectId,
@@ -148,6 +159,7 @@ const printJobSchema = new Schema<IPrintJob>(
 printJobSchema.index({ jobNumber: 1 }, { unique: true });
 printJobSchema.index({ storeId: 1, createdAt: -1 });
 printJobSchema.index({ storeId: 1, status: 1, createdAt: -1 });
+printJobSchema.index({ deletedStoreId: 1 });
 
 export const PrintJobModel: Model<IPrintJob> =
   mongoose.models.PrintJob || mongoose.model<IPrintJob>('PrintJob', printJobSchema);

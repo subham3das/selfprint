@@ -1,4 +1,4 @@
-import { Response } from 'express';
+﻿import { Response } from 'express';
 import { HTTP_STATUS, HttpStatusCode } from '../constants/httpStatusCodes';
 import { ERROR_CODES, ErrorCode } from '../constants/errorCodes';
 
@@ -29,6 +29,7 @@ export interface StandardPaginatedResponse<T = any> {
 export interface StandardErrorResponse {
   success: false;
   message: string;
+  code: string;
   errorCode: ErrorCode;
   errors?: Record<string, string>;
   error?: string;
@@ -100,6 +101,7 @@ export class ApiResponse {
     const payload: StandardErrorResponse = {
       success: false,
       message,
+      code: String(errorCode),
       errorCode,
       ...(errors && Object.keys(errors).length > 0 ? { errors } : {}),
       details,

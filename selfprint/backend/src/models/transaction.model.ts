@@ -1,4 +1,4 @@
-import mongoose, { Schema, Model, Document } from 'mongoose';
+﻿import mongoose, { Schema, Model, Document } from 'mongoose';
 
 export type PaymentGatewayType = 'RAZORPAY' | 'CASHFREE' | 'UPI' | 'WALLET' | 'CASH';
 export type TransactionStatusType = 'PAID' | 'PENDING' | 'FAILED' | 'REFUNDED';
@@ -7,7 +7,9 @@ export type SettlementStatusType = 'PENDING' | 'SETTLED';
 export interface ITransaction extends Document {
   _id: mongoose.Types.ObjectId;
   transactionId: string;
-  storeId: mongoose.Types.ObjectId;
+  storeId?: mongoose.Types.ObjectId | null;
+  deletedStoreId?: string | null;
+  deletedStoreName?: string | null;
   userId?: mongoose.Types.ObjectId | null;
   jobId: mongoose.Types.ObjectId;
   amount: number;
@@ -34,7 +36,16 @@ const transactionSchema = new Schema<ITransaction>(
     storeId: {
       type: Schema.Types.ObjectId,
       ref: 'Store',
-      required: [true, 'Store ID is required']
+      default: null
+    },
+    deletedStoreId: {
+      type: String,
+      default: null,
+      index: true
+    },
+    deletedStoreName: {
+      type: String,
+      default: null
     },
     userId: {
       type: Schema.Types.ObjectId,
@@ -103,6 +114,7 @@ transactionSchema.index({ transactionId: 1 }, { unique: true });
 transactionSchema.index({ jobId: 1 });
 transactionSchema.index({ storeId: 1, createdAt: -1 });
 transactionSchema.index({ storeId: 1, status: 1, createdAt: -1 });
+transactionSchema.index({ deletedStoreId: 1 });
 
 export const TransactionModel: Model<ITransaction> =
   mongoose.models.Transaction || mongoose.model<ITransaction>('Transaction', transactionSchema);

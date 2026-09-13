@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { dashboardRouter } from './dashboard';
 import { historyRouter } from './history';
 import { settingsRouter } from './settings';
@@ -7,6 +7,7 @@ import { storeController } from './store.controller';
 import { storeOnboardingSchema, storeLoginSchema, bankDetailsSchema } from './store.validation';
 import { validateRequest } from '../../validators';
 import { authenticate } from '../../middlewares/auth.middleware';
+import { requireActiveStore } from '../../middlewares/storeProtection.middleware';
 import { uploadSingleImage } from '../../uploads/multer.config';
 
 const storeRouter = Router();
@@ -40,14 +41,14 @@ storeRouter.post(
   storeController.login
 );
 
-// Store Profile (Authenticated)
-storeRouter.get('/me', authenticate, storeController.getProfile);
+// Store Profile (Authenticated & Protected)
+storeRouter.get('/me', authenticate, requireActiveStore, storeController.getProfile);
 
 // Get All Stores Owned by Authenticated User (Authenticated)
 storeRouter.get('/my-stores', authenticate, storeController.getMyStores);
 
-// Update First Login Flag & Printer Configured State (Authenticated)
-storeRouter.patch('/first-login-completed', authenticate, storeController.completeFirstLogin);
+// Update First Login Flag & Printer Configured State (Authenticated & Protected)
+storeRouter.patch('/first-login-completed', authenticate, requireActiveStore, storeController.completeFirstLogin);
 
 // Direct Cloudinary Asset Upload for Store Branding / Photos
 storeRouter.post(
@@ -57,13 +58,13 @@ storeRouter.post(
 );
 
 // Store Dashboard Sub-module
-storeRouter.use('/dashboard', dashboardRouter);
+storeRouter.use('/dashboard', authenticate, requireActiveStore, dashboardRouter);
 
 // Store History Sub-module
-storeRouter.use('/history', historyRouter);
+storeRouter.use('/history', authenticate, requireActiveStore, historyRouter);
 
 // Store Settings Sub-module
-storeRouter.use('/settings', settingsRouter);
+storeRouter.use('/settings', authenticate, requireActiveStore, settingsRouter);
 
 // Store QR Sub-module
 storeRouter.use('/qr', qrRouter);

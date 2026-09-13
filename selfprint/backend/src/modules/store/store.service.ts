@@ -1,4 +1,4 @@
-import { storeRepository, StoreRepository } from './store.repository';
+﻿import { storeRepository, StoreRepository } from './store.repository';
 import {
   StoreOnboardingDto,
   StoreRegistrationResultDto,
@@ -14,7 +14,9 @@ import {
   NotFoundError,
   UnauthorizedError,
   ForbiddenError,
-  ValidationError
+  ValidationError,
+  StoreBlockedError,
+  StoreDeletedError
 } from '../../errors';
 import { emailService } from '../../services/email.service';
 import { logger } from '../../utils/logger';
@@ -134,18 +136,31 @@ export class StoreService {
       throw new NotFoundError('Store not found.');
     }
 
-    // 2. Verify password with bcrypt
+    // 2. Check Deleted Status
+    if (store.isDeleted || store.status === 'DELETED') {
+      throw new StoreDeletedError('This store has been deleted by the administrator.');
+    }
+
+    // 3. Check Blocked Status
+    if (store.blocked || store.status === 'BLOCKED') {
+      throw new StoreBlockedError('Your store has been blocked by the administrator. Please contact support.');
+    }
+
+    // 4. Verify password with bcrypt
     const isPasswordValid = await passwordUtils.compare(password, store.password);
     if (!isPasswordValid) {
       throw new UnauthorizedError('Incorrect password.');
     }
 
-    // 3. Verify store operational status
+    // 5. Verify other store operational status
+    if (store.status === 'SUSPENDED') {
+      throw new ForbiddenError('Store account is suspended. Please contact Self Print Support.');
+    }
     if (store.status !== 'ACTIVE') {
       throw new ForbiddenError('Store account is inactive. Please contact Self Print Support.');
     }
 
-    // 4. Generate signed JWT token
+    // 6. Generate signed JWT token
     const token = jwtUtils.generateToken({
       sub: String(store._id),
       email: store.email,
@@ -154,24 +169,26 @@ export class StoreService {
       storeCode: store.storeCode
     });
 
-    // 5. Query all active stores owned by the user (matching email/phone)
+    // 7. Query all active stores owned by the user (matching email/phone)
     const allStores = await this.repository.findAllByOwner(store.email, store.phone);
-    const storeSummaries: StoreSummaryDto[] = allStores.map((s) => ({
-      id: String(s._id),
-      storeCode: s.storeCode,
-      storeName: s.name,
-      ownerName: s.ownerName,
-      email: s.email,
-      phone: s.phone,
-      address: s.address,
-      city: s.city,
-      state: s.state,
-      pincode: s.pincode,
-      status: s.status,
-      isVerified: s.isVerified,
-      storeImage: s.storeImage,
-      logo: s.logo
-    }));
+    const storeSummaries: StoreSummaryDto[] = allStores
+      .filter((s) => !s.isDeleted && s.status !== 'DELETED')
+      .map((s) => ({
+        id: String(s._id),
+        storeCode: s.storeCode,
+        storeName: s.name,
+        ownerName: s.ownerName,
+        email: s.email,
+        phone: s.phone,
+        address: s.address,
+        city: s.city,
+        state: s.state,
+        pincode: s.pincode,
+        status: s.status,
+        isVerified: s.isVerified,
+        storeImage: s.storeImage,
+        logo: s.logo
+      }));
 
     return {
       token,
@@ -202,22 +219,24 @@ export class StoreService {
    */
   public async getMyStores(email?: string, phone?: string): Promise<StoreSummaryDto[]> {
     const allStores = await this.repository.findAllByOwner(email, phone);
-    return allStores.map((s) => ({
-      id: String(s._id),
-      storeCode: s.storeCode,
-      storeName: s.name,
-      ownerName: s.ownerName,
-      email: s.email,
-      phone: s.phone,
-      address: s.address,
-      city: s.city,
-      state: s.state,
-      pincode: s.pincode,
-      status: s.status,
-      isVerified: s.isVerified,
-      storeImage: s.storeImage,
-      logo: s.logo
-    }));
+    return allStores
+      .filter((s) => !s.isDeleted && s.status !== 'DELETED')
+      .map((s) => ({
+        id: String(s._id),
+        storeCode: s.storeCode,
+        storeName: s.name,
+        ownerName: s.ownerName,
+        email: s.email,
+        phone: s.phone,
+        address: s.address,
+        city: s.city,
+        state: s.state,
+        pincode: s.pincode,
+        status: s.status,
+        isVerified: s.isVerified,
+        storeImage: s.storeImage,
+        logo: s.logo
+      }));
   }
 
   /**
@@ -225,8 +244,11 @@ export class StoreService {
    */
   public async getStoreProfile(storeId: string) {
     const store = await this.repository.findById(storeId);
-    if (!store) {
-      throw new NotFoundError('Store not found.');
+    if (!store || store.isDeleted || store.status === 'DELETED') {
+      throw new StoreDeletedError('This store has been deleted by the administrator.');
+    }
+    if (store.blocked || store.status === 'BLOCKED') {
+      throw new StoreBlockedError('Your store has been blocked by the administrator. Please contact support.');
     }
     return store;
   }

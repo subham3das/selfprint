@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+﻿import mongoose from 'mongoose';
 import {
   StoreModel,
   IStore,
@@ -13,14 +13,20 @@ export class StoreRepository {
    * Find store by email (case-insensitive)
    */
   public async findByEmail(email: string): Promise<IStore | null> {
-    return StoreModel.findOne({ email: email.toLowerCase().trim() }).lean().exec() as unknown as IStore | null;
+    return StoreModel.findOne({
+      email: email.toLowerCase().trim(),
+      isDeleted: { $ne: true }
+    }).lean().exec() as unknown as IStore | null;
   }
 
   /**
    * Find store by primary phone number
    */
   public async findByPhone(phone: string): Promise<IStore | null> {
-    return StoreModel.findOne({ phone: phone.trim() }).lean().exec() as unknown as IStore | null;
+    return StoreModel.findOne({
+      phone: phone.trim(),
+      isDeleted: { $ne: true }
+    }).lean().exec() as unknown as IStore | null;
   }
 
   /**
@@ -28,7 +34,10 @@ export class StoreRepository {
    */
   public async findByGST(gstNumber: string): Promise<IStore | null> {
     if (!gstNumber) return null;
-    return StoreModel.findOne({ gstNumber: gstNumber.toUpperCase().trim() }).lean().exec() as unknown as IStore | null;
+    return StoreModel.findOne({
+      gstNumber: gstNumber.toUpperCase().trim(),
+      isDeleted: { $ne: true }
+    }).lean().exec() as unknown as IStore | null;
   }
 
   /**
@@ -63,7 +72,7 @@ export class StoreRepository {
 
     return StoreModel.find({
       $or: conditions,
-      status: 'ACTIVE'
+      isDeleted: { $ne: true }
     }).lean().exec() as unknown as IStore[];
   }
 
@@ -123,7 +132,10 @@ export class StoreRepository {
       storeCode,
       status: 'ACTIVE',
       isVerified: true,
-      verifiedAt: new Date()
+      verifiedAt: new Date(),
+      blocked: false,
+      isDeleted: false,
+      tokenVersion: 0
     });
 
     // 2. Create Bank Account Record

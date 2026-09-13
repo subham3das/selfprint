@@ -1,4 +1,19 @@
-export type AdminStoreStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING' | 'Online' | 'Offline' | 'Busy' | 'Suspended' | 'Pending';
+﻿export type AdminStoreStatus =
+  | 'ACTIVE'
+  | 'INACTIVE'
+  | 'SUSPENDED'
+  | 'PENDING'
+  | 'BLOCKED'
+  | 'DELETED'
+  | 'Online'
+  | 'Offline'
+  | 'Busy'
+  | 'Suspended'
+  | 'Pending'
+  | 'Blocked'
+  | 'Deleted'
+  | 'Active';
+
 export type AdminStorePlan = 'Basic' | 'Pro' | 'Enterprise';
 
 export interface AdminStoreFilterQuery {
@@ -22,6 +37,10 @@ export interface AdminStoreStatsResponse {
   pendingPercent: string;
   suspendedStores: number;
   suspendedPercent: string;
+  blockedStores: number;
+  blockedPercent: string;
+  deletedStores: number;
+  deletedPercent: string;
   totalCities: number;
 }
 
@@ -46,8 +65,13 @@ export interface AdminStoreListItem {
   commissionRaw: number;
   commissionFormatted: string;
   commissionRate: number;
-  status: 'Online' | 'Offline' | 'Busy' | 'Suspended' | 'Pending';
-  rawStatus: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING';
+  status: 'Online' | 'Offline' | 'Busy' | 'Suspended' | 'Pending' | 'Blocked' | 'Deleted';
+  rawStatus: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING' | 'BLOCKED' | 'DELETED';
+  blocked?: boolean;
+  blockReason?: string;
+  blockedAt?: Date | string;
+  isDeleted?: boolean;
+  deletedAt?: Date | string;
   lastActive: string;
   printerCount: number;
   qrGenerated: boolean;
@@ -81,6 +105,6 @@ export interface UpdateAdminStoreInput {
   pincode?: string;
   plan?: AdminStorePlan;
   commissionRate?: number;
-  status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING' | 'Online' | 'Offline' | 'Suspended' | 'Pending';
+  status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING' | 'BLOCKED' | 'DELETED' | 'Online' | 'Offline' | 'Suspended' | 'Pending' | 'Blocked' | 'Deleted';
   printerCount?: number;
 }

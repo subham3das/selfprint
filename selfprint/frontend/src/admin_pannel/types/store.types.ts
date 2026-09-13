@@ -1,11 +1,14 @@
-export type StorePlan = 'Basic' | 'Pro' | 'Enterprise';
+﻿export type StorePlan = 'Basic' | 'Pro' | 'Enterprise';
 
 export type StoreStatus =
   | 'Online'
+  | 'Active'
   | 'Busy'
   | 'Offline'
   | 'Pending'
-  | 'Suspended';
+  | 'Suspended'
+  | 'Blocked'
+  | 'Deleted';
 
 export interface AdminStoreItem {
   id: string;
@@ -29,6 +32,12 @@ export interface AdminStoreItem {
   commissionFormatted: string;
   commissionRate: number; // e.g. 10
   status: StoreStatus;
+  rawStatus?: string;
+  blocked?: boolean;
+  blockReason?: string;
+  blockedAt?: string;
+  isDeleted?: boolean;
+  deletedAt?: string;
   lastActive: string;
   printerCount: number;
   qrGenerated: boolean;
@@ -45,6 +54,10 @@ export interface StoreStatsData {
   pendingPercent: string;
   suspendedStores: number;
   suspendedPercent: string;
+  blockedStores?: number;
+  blockedPercent?: string;
+  deletedStores?: number;
+  deletedPercent?: string;
   totalCities: number;
 }
 

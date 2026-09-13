@@ -1,10 +1,10 @@
-import React from 'react';
+﻿import React from 'react';
 import { motion } from 'framer-motion';
 import {
   Store,
   Wifi,
-  Clock,
-  AlertOctagon,
+  Ban,
+  Trash2,
   MapPin
 } from 'lucide-react';
 import { StoreStatsData } from '../types/store.types';
@@ -28,41 +28,41 @@ export const StoreStatsCards: React.FC<StoreStatsCardsProps> = ({ stats, isLoadi
       id: 'active',
       title: 'Active Stores',
       value: stats.activeStores,
-      trend: stats.activePercent ? `↑ ${stats.activePercent}` : undefined,
+      trend: stats.activePercent ? `+${stats.activePercent}` : undefined,
       isPositive: true,
       icon: Store,
       iconBg: 'bg-emerald-50 text-emerald-600'
     },
     {
+      id: 'blocked',
+      title: 'Blocked Stores',
+      value: stats.blockedStores ?? 0,
+      subText: `${stats.blockedPercent || '0%'} of all stores`,
+      icon: Ban,
+      iconBg: 'bg-rose-50 text-rose-600'
+    },
+    {
+      id: 'deleted',
+      title: 'Deleted Stores',
+      value: stats.deletedStores ?? 0,
+      subText: `${stats.deletedPercent || '0%'} archived`,
+      icon: Trash2,
+      iconBg: 'bg-slate-100 text-slate-700'
+    },
+    {
       id: 'offline',
       title: 'Offline Stores',
       value: stats.offlineStores,
-      trend: stats.offlinePercent ? `↓ ${stats.offlinePercent}` : undefined,
+      trend: stats.offlinePercent ? `${stats.offlinePercent}` : undefined,
       isPositive: false,
       icon: Wifi,
-      iconBg: 'bg-rose-50 text-rose-500'
-    },
-    {
-      id: 'pending',
-      title: 'Pending Approval',
-      value: stats.pendingApproval,
-      subText: `${stats.pendingPercent || '0%'} of all stores`,
-      icon: Clock,
       iconBg: 'bg-amber-50 text-amber-600'
-    },
-    {
-      id: 'suspended',
-      title: 'Suspended Stores',
-      value: stats.suspendedStores,
-      subText: `${stats.suspendedPercent || '0%'} of all stores`,
-      icon: AlertOctagon,
-      iconBg: 'bg-rose-50 text-rose-500'
     },
     {
       id: 'cities',
       title: 'Total Cities',
       value: stats.totalCities,
-      subText: 'Across all stores',
+      subText: 'Active network presence',
       icon: MapPin,
       iconBg: 'bg-sky-50 text-sky-600'
     }
@@ -127,3 +127,5 @@ export const StoreStatsCards: React.FC<StoreStatsCardsProps> = ({ stats, isLoadi
     </div>
   );
 };
+
+export default StoreStatsCards;

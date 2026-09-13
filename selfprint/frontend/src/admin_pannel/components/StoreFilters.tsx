@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -27,12 +27,11 @@ export const StoreFilters: React.FC<StoreFiltersProps> = ({
 }) => {
   const { can } = usePermission();
   const [openDropdown, setOpenDropdown] = useState<'status' | 'city' | 'plan' | null>(null);
-
   const filterRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
         setOpenDropdown(null);
       }
     };
@@ -40,7 +39,7 @@ export const StoreFilters: React.FC<StoreFiltersProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const statusOptions = ['All', 'Online', 'Busy', 'Offline', 'Pending', 'Suspended'];
+  const statusOptions = ['All', 'Active', 'Blocked', 'Deleted', 'Offline', 'Pending', 'Suspended'];
   const planOptions = ['All', 'Basic', 'Pro', 'Enterprise'];
   const cityOptions = ['All', ...uniqueCities];
 
@@ -56,7 +55,7 @@ export const StoreFilters: React.FC<StoreFiltersProps> = ({
           type="text"
           value={filters.searchQuery}
           onChange={(e) => onFilterChange({ searchQuery: e.target.value })}
-          placeholder="Search stores by name, owner, email or city..."
+          placeholder="Search stores by name, code, owner, email or city..."
           className="w-full bg-slate-50/70 border border-slate-200/80 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-900 placeholder-slate-400 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white transition-all"
         />
       </div>
@@ -92,7 +91,7 @@ export const StoreFilters: React.FC<StoreFiltersProps> = ({
                       onFilterChange({ status: st });
                       setOpenDropdown(null);
                     }}
-                    className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium transition-colors ${
+                    className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
                       filters.status === st
                         ? 'bg-indigo-50 text-indigo-600 font-bold'
                         : 'text-slate-700 hover:bg-slate-50'
@@ -136,7 +135,7 @@ export const StoreFilters: React.FC<StoreFiltersProps> = ({
                       onFilterChange({ city: ct });
                       setOpenDropdown(null);
                     }}
-                    className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium transition-colors ${
+                    className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
                       filters.city === ct
                         ? 'bg-indigo-50 text-indigo-600 font-bold'
                         : 'text-slate-700 hover:bg-slate-50'
@@ -180,7 +179,7 @@ export const StoreFilters: React.FC<StoreFiltersProps> = ({
                       onFilterChange({ plan: pl });
                       setOpenDropdown(null);
                     }}
-                    className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium transition-colors ${
+                    className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
                       filters.plan === pl
                         ? 'bg-indigo-50 text-indigo-600 font-bold'
                         : 'text-slate-700 hover:bg-slate-50'
@@ -205,7 +204,7 @@ export const StoreFilters: React.FC<StoreFiltersProps> = ({
           <span>Reset</span>
         </button>
 
-        {/* Add New Store Button (RBAC Protected) */}
+        {/* Add New Store Button */}
         {can('stores', 'create') && (
           <button
             type="button"
@@ -221,3 +220,4 @@ export const StoreFilters: React.FC<StoreFiltersProps> = ({
   );
 };
 
+export default StoreFilters;

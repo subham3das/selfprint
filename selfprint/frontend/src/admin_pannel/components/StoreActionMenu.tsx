@@ -1,11 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import {
   Eye,
   Pencil,
   MoreVertical,
-  Trash2
+  Trash2,
+  Ban,
+  ShieldCheck
 } from 'lucide-react';
 import { AdminStoreItem } from '../types/store.types';
 import { usePermission } from '../context/PermissionContext';
@@ -14,15 +16,17 @@ interface StoreActionMenuProps {
   store: AdminStoreItem;
   onView: (store: AdminStoreItem) => void;
   onEdit: (store: AdminStoreItem) => void;
-  onToggleStatus: (id: string, newStatus: AdminStoreItem['status']) => void;
-  onDelete: (id: string) => void;
-  onGenerateQr?: (store: AdminStoreItem) => void;
+  onBlock?: (store: AdminStoreItem) => void;
+  onUnblock?: (store: AdminStoreItem) => void;
+  onDelete: (store: AdminStoreItem) => void;
 }
 
 export const StoreActionMenu: React.FC<StoreActionMenuProps> = ({
   store,
   onView,
   onEdit,
+  onBlock,
+  onUnblock,
   onDelete
 }) => {
   const { can } = usePermission();
@@ -35,12 +39,14 @@ export const StoreActionMenu: React.FC<StoreActionMenuProps> = ({
   const canEdit = can('stores', 'edit');
   const canDelete = can('stores', 'delete');
 
+  const isBlocked = store.status === 'Blocked' || Boolean(store.blocked);
+
   // Calculate position relative to button bounding rect
   const updatePosition = () => {
     if (!buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
     const menuWidth = 192; // w-48 is 192px
-    const menuHeight = 125; // estimated height of 3 items
+    const menuHeight = 160; // height with 4 items
 
     // Vertical placement: flip upwards if near the bottom
     const spaceBelow = window.innerHeight - rect.bottom;
@@ -95,7 +101,6 @@ export const StoreActionMenu: React.FC<StoreActionMenuProps> = ({
     document.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('keydown', handleKeyDown);
 
-    // Attach scroll/resize listeners after mount tick
     const timer = setTimeout(() => {
       window.addEventListener('scroll', handleScrollOrResize, true);
       window.addEventListener('resize', handleScrollOrResize);
@@ -147,7 +152,7 @@ export const StoreActionMenu: React.FC<StoreActionMenuProps> = ({
         </button>
       )}
 
-      {/* 4. Independent Floating Portal Menu rendered directly under document.body */}
+      {/* 4. Independent Floating Portal Menu */}
       {isMenuOpen &&
         createPortal(
           <motion.div
@@ -192,21 +197,49 @@ export const StoreActionMenu: React.FC<StoreActionMenuProps> = ({
               )}
             </div>
 
-            {canDelete && (
-              <div className="py-1">
+            <div className="py-1">
+              {canEdit && (
+                isBlocked ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      onUnblock?.(store);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-emerald-600 hover:bg-emerald-50 font-medium transition-colors cursor-pointer text-left"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Unblock Store</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      onBlock?.(store);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-amber-600 hover:bg-amber-50 font-medium transition-colors cursor-pointer text-left"
+                  >
+                    <Ban className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Block Store</span>
+                  </button>
+                )
+              )}
+
+              {canDelete && (
                 <button
                   type="button"
                   onClick={() => {
                     setIsMenuOpen(false);
-                    onDelete(store.id);
+                    onDelete(store);
                   }}
                   className="w-full flex items-center gap-2.5 px-3.5 py-2 text-rose-600 hover:bg-rose-50 font-medium transition-colors cursor-pointer text-left"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-rose-500" />
                   <span>Delete Store</span>
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </motion.div>,
           document.body
         )}

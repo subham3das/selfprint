@@ -1,4 +1,4 @@
-import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+﻿import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { API_BASE } from '@/config/api';
 
 export const apiClient = axios.create({
@@ -44,13 +44,16 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Response interceptor: Handle 401 expired/invalid token
+// Response interceptor: Handle 401 unauthorized and 403 STORE_BLOCKED / STORE_DELETED
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      const url = error.config?.url || '';
+    const status = error.response?.status;
+    const data = error.response?.data as any;
+    const errorCode = data?.code || data?.errorCode;
+    const url = error.config?.url || '';
 
+    if (status === 401) {
       // Store panel 401: clear store token, redirect to login
       if (url.includes('/store/')) {
         localStorage.removeItem('selfprint_store_token');
@@ -66,7 +69,15 @@ apiClient.interceptors.response.use(
           window.location.href = '/admin/login';
         }
       }
+    } else if (status === 403 && (errorCode === 'STORE_BLOCKED' || errorCode === 'STORE_DELETED')) {
+      localStorage.removeItem('selfprint_store_token');
+      localStorage.removeItem('store_token');
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/store/login')) {
+        alert(data?.message || 'Your store access has been restricted by the administrator.');
+        window.location.href = '/store/login';
+      }
     }
+
     return Promise.reject(error);
   }
 );

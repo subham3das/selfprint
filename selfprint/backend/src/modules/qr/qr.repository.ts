@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+﻿import mongoose from 'mongoose';
 import { StoreModel, IStore } from '../../models/store.model';
 import { QRLinkModel, IQRLink } from '../../models/qrLink.model';
 import { QRHistoryModel, IQRHistory } from '../../models/qrHistory.model';
@@ -10,7 +10,7 @@ import { QRAnalyticsDto } from './qr.types';
 export class QRRepository {
   public async getStore(storeIdParam?: string): Promise<IStore | null> {
     if (storeIdParam && mongoose.Types.ObjectId.isValid(storeIdParam)) {
-      const byId = await StoreModel.findById(storeIdParam).lean();
+      const byId = await StoreModel.findOne({ _id: storeIdParam, isDeleted: { $ne: true } }).lean();
       if (byId) return byId as unknown as IStore;
     }
     if (storeIdParam) {
@@ -18,11 +18,12 @@ export class QRRepository {
         $or: [
           { storeCode: storeIdParam.toUpperCase() },
           { email: storeIdParam.toLowerCase() }
-        ]
+        ],
+        isDeleted: { $ne: true }
       }).lean();
       if (byCode) return byCode as unknown as IStore;
     }
-    return (await StoreModel.findOne().sort({ createdAt: 1 }).lean()) as unknown as IStore | null;
+    return (await StoreModel.findOne({ isDeleted: { $ne: true } }).sort({ createdAt: 1 }).lean()) as unknown as IStore | null;
   }
 
   public async getOrCreateQRLink(store: IStore): Promise<IQRLink> {
@@ -46,27 +47,6 @@ export class QRRepository {
         totalScans: 0,
         downloadsCount: 1,
         isActive: true
-      });
-
-      await QRHistoryModel.create({
-        storeId: store._id,
-        name: `${store.name} (v1 - default)`,
-        location: `${store.city || ''}, ${store.state || ''}`.trim() || 'Main Store',
-        template: 'default',
-        url: qr.targetUrl,
-        qrToken: token,
-        version: 1,
-        expiry: 'No Expiry',
-        status: 'Active',
-        downloadsCount: 1,
-        scanCount: 0,
-        createdOn: new Date().toLocaleDateString('en-GB', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        })
       });
     }
 
@@ -144,7 +124,6 @@ export class QRRepository {
       .lean()
       .exec();
 
-    // If history is empty but a store has a QR link, auto-seed the active QR into history
     if (!history || history.length === 0) {
       const store = await StoreModel.findById(storeId).lean();
       const qr = await QRLinkModel.findOne({ storeId }).exec();
@@ -238,7 +217,7 @@ export class QRRepository {
       }
     }
 
-    // 2. Check if token belongs to an expired history item (only if not currently active)
+    // 2. Check if token belongs to an expired history item
     if (!qr || qr.token !== raw) {
       const expiredHistory = await QRHistoryModel.findOne({
         qrToken: raw,
@@ -253,17 +232,24 @@ export class QRRepository {
       }
     }
 
-    if (!store) {
-      store = (await StoreModel.findOne().sort({ createdAt: 1 }).lean()) as unknown as IStore | null;
-      if (store) {
-        qr = await QRLinkModel.findOne({ storeId: store._id }).exec();
-      }
-    }
-
     if (!store || !qr) {
       return {
         available: false,
         message: 'Store not found or invalid QR code.'
+      };
+    }
+
+    if (store.isDeleted || store.status === 'DELETED') {
+      return {
+        available: false,
+        message: 'This store has been deleted by the administrator.'
+      };
+    }
+
+    if (store.blocked || store.status === 'BLOCKED') {
+      return {
+        available: false,
+        message: 'Your store has been blocked by the administrator. Please contact support.'
       };
     }
 

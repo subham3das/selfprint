@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   AdminStoreItem,
@@ -18,6 +18,10 @@ const defaultStats: StoreStatsData = {
   pendingPercent: '0%',
   suspendedStores: 0,
   suspendedPercent: '0%',
+  blockedStores: 0,
+  blockedPercent: '0%',
+  deletedStores: 0,
+  deletedPercent: '0%',
   totalCities: 0
 };
 
@@ -39,6 +43,8 @@ export const useStores = () => {
   // Modal States
   const [viewingStore, setViewingStore] = useState<AdminStoreItem | null>(null);
   const [editingStore, setEditingStore] = useState<AdminStoreItem | null>(null);
+  const [blockingStore, setBlockingStore] = useState<AdminStoreItem | null>(null);
+  const [deletingStore, setDeletingStore] = useState<AdminStoreItem | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
 
   // 1. Live KPI Statistics Query
@@ -143,12 +149,39 @@ export const useStores = () => {
     }
   });
 
-  // 6. Delete Store Mutation
+  // 6. Block Store Mutation
+  const blockMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      adminStoresService.blockStore(id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-stores-list'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-stores-stats'] });
+      setBlockingStore(null);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.message || 'Failed to block store.');
+    }
+  });
+
+  // 7. Unblock Store Mutation
+  const unblockMutation = useMutation({
+    mutationFn: (id: string) => adminStoresService.unblockStore(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-stores-list'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-stores-stats'] });
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.message || 'Failed to unblock store.');
+    }
+  });
+
+  // 8. Delete Store Mutation
   const deleteMutation = useMutation({
     mutationFn: (id: string) => adminStoresService.deleteStore(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-stores-list'] });
       queryClient.invalidateQueries({ queryKey: ['admin-stores-stats'] });
+      setDeletingStore(null);
     },
     onError: (err: any) => {
       alert(err.response?.data?.message || 'Failed to delete store.');
@@ -167,10 +200,18 @@ export const useStores = () => {
     toggleStatusMutation.mutate({ id, status: newStatus });
   };
 
-  const handleDeleteStore = (id: string) => {
-    if (confirm('Are you sure you want to deactivate this store from the platform?')) {
-      deleteMutation.mutate(id);
+  const handleBlockStore = (id: string, reason: string) => {
+    blockMutation.mutate({ id, reason });
+  };
+
+  const handleUnblockStore = (id: string) => {
+    if (confirm('Are you sure you want to unblock this store and restore full platform access?')) {
+      unblockMutation.mutate(id);
     }
+  };
+
+  const handleDeleteStore = (id: string) => {
+    deleteMutation.mutate(id);
   };
 
   const isError = isStoresError || isStatsError;
@@ -198,16 +239,28 @@ export const useStores = () => {
     setViewingStore,
     editingStore,
     setEditingStore,
+    blockingStore,
+    setBlockingStore,
+    deletingStore,
+    setDeletingStore,
     isCreateModalOpen,
     setIsCreateModalOpen,
     handleCreateStore,
     handleUpdateStore,
     handleToggleStoreStatus,
+    handleBlockStore,
+    handleUnblockStore,
     handleDeleteStore,
+    isBlockingLoading: blockMutation.isPending,
+    isDeletingLoading: deleteMutation.isPending,
     isMutating:
       createMutation.isPending ||
       updateMutation.isPending ||
       toggleStatusMutation.isPending ||
+      blockMutation.isPending ||
+      unblockMutation.isPending ||
       deleteMutation.isPending
   };
 };
+
+export default useStores;

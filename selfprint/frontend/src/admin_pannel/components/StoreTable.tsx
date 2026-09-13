@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { motion } from 'framer-motion';
 import { AdminStoreItem } from '../types/store.types';
 import { StoreStatusBadge } from './StoreStatusBadge';
@@ -9,18 +9,18 @@ interface StoreTableProps {
   stores: AdminStoreItem[];
   onViewStore: (store: AdminStoreItem) => void;
   onEditStore: (store: AdminStoreItem) => void;
-  onToggleStatus: (id: string, newStatus: AdminStoreItem['status']) => void;
-  onDeleteStore: (id: string) => void;
-  onGenerateQr?: (store: AdminStoreItem) => void;
+  onBlockStore?: (store: AdminStoreItem) => void;
+  onUnblockStore?: (store: AdminStoreItem) => void;
+  onDeleteStore: (store: AdminStoreItem) => void;
 }
 
 export const StoreTable: React.FC<StoreTableProps> = ({
   stores,
   onViewStore,
   onEditStore,
-  onToggleStatus,
-  onDeleteStore,
-  onGenerateQr
+  onBlockStore,
+  onUnblockStore,
+  onDeleteStore
 }) => {
   return (
     <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden">
@@ -134,9 +134,9 @@ export const StoreTable: React.FC<StoreTableProps> = ({
                       store={store}
                       onView={onViewStore}
                       onEdit={onEditStore}
-                      onToggleStatus={onToggleStatus}
+                      onBlock={onBlockStore}
+                      onUnblock={onUnblockStore}
                       onDelete={onDeleteStore}
-                      onGenerateQr={onGenerateQr}
                     />
                   </td>
                 </motion.tr>
@@ -148,3 +148,5 @@ export const StoreTable: React.FC<StoreTableProps> = ({
     </div>
   );
 };
+
+export default StoreTable;

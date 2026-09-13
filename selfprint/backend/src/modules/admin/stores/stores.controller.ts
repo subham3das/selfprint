@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import { BaseController } from '../../../controllers/BaseController';
 import { adminStoresService, AdminStoresService } from './stores.service';
 import { ApiResponse } from '../../../responses/ApiResponse';
@@ -103,18 +103,56 @@ export class AdminStoresController extends BaseController {
     }
   };
 
+  public blockStore = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const { reason } = req.body;
+      const adminUser = (req as any).user;
+      const blocked = await this.service.blockStore(req.params.id, reason, adminUser);
+      if (!blocked) {
+        ApiResponse.error(res, 'Store not found', HTTP_STATUS.NOT_FOUND);
+        return;
+      }
+      this.sendSuccess(res, 'Store blocked successfully', { id: req.params.id, store: blocked });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public unblockStore = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const adminUser = (req as any).user;
+      const unblocked = await this.service.unblockStore(req.params.id, adminUser);
+      if (!unblocked) {
+        ApiResponse.error(res, 'Store not found', HTTP_STATUS.NOT_FOUND);
+        return;
+      }
+      this.sendSuccess(res, 'Store unblocked successfully', { id: req.params.id, store: unblocked });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   public deleteStore = async (
     req: Request,
     res: Response,
     next: NextFunction
   ): Promise<void> => {
     try {
-      const deleted = await this.service.deleteStore(req.params.id);
+      const adminUser = (req as any).user;
+      const deleted = await this.service.deleteStore(req.params.id, adminUser);
       if (!deleted) {
         ApiResponse.error(res, 'Store not found', HTTP_STATUS.NOT_FOUND);
         return;
       }
-      this.sendSuccess(res, 'Store deactivated successfully', { id: req.params.id });
+      this.sendSuccess(res, 'Store permanently deleted and relations cleaned up successfully', deleted);
     } catch (error) {
       next(error);
     }

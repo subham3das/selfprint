@@ -1,12 +1,20 @@
-import mongoose from 'mongoose';
+﻿import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { StoreModel, IStore } from '../../../models/store.model';
 import { StoreSettingsModel } from '../../../models/storeSettings.model';
 import { PrinterModel } from '../../../models/printer.model';
 import { QRLinkModel } from '../../../models/qrLink.model';
+import { QRHistoryModel } from '../../../models/qrHistory.model';
 import { PrintJobModel } from '../../../models/printJob.model';
 import { TransactionModel } from '../../../models/transaction.model';
 import { StoreDashboardStatsModel } from '../../../models/storeDashboardStats.model';
+import { StoreBankAccountModel } from '../../../models/storeBankAccount.model';
+import { StoreNotificationModel } from '../../../models/storeNotification.model';
+import { PairingCodeModel } from '../../../models/pairingCode.model';
+import { ConnectorModel } from '../../../models/connector.model';
+import { AuditLogModel } from '../../../models/auditLog.model';
+import { socketManager } from '../../../socket';
+import { connectorRegistry } from '../../connector/connector.service';
 import {
   AdminStoreFilterQuery,
   AdminStoreListItem,
@@ -23,15 +31,35 @@ export class AdminStoresService {
    */
   public async getStoreStats(): Promise<AdminStoreStatsResponse> {
     const totalStores = await StoreModel.countDocuments();
-    const activeCount = await StoreModel.countDocuments({ status: 'ACTIVE' });
-    const suspendedCount = await StoreModel.countDocuments({ status: 'SUSPENDED' });
+    const activeCount = await StoreModel.countDocuments({
+      status: 'ACTIVE',
+      blocked: { $ne: true },
+      isDeleted: { $ne: true }
+    });
+    const blockedCount = await StoreModel.countDocuments({
+      $or: [{ status: 'BLOCKED' }, { blocked: true }],
+      isDeleted: { $ne: true }
+    });
+    const deletedCount = await StoreModel.countDocuments({
+      $or: [{ status: 'DELETED' }, { isDeleted: true }]
+    });
+    const suspendedCount = await StoreModel.countDocuments({
+      status: 'SUSPENDED',
+      blocked: { $ne: true },
+      isDeleted: { $ne: true }
+    });
     const pendingCount = await StoreModel.countDocuments({
-      $or: [{ status: 'PENDING' }, { isVerified: false }]
+      $or: [{ status: 'PENDING' }, { isVerified: false }],
+      blocked: { $ne: true },
+      isDeleted: { $ne: true }
+    });
+    const offlineCount = await StoreModel.countDocuments({
+      status: 'INACTIVE',
+      blocked: { $ne: true },
+      isDeleted: { $ne: true }
     });
 
-    const offlineCount = await StoreModel.countDocuments({ status: 'INACTIVE' });
-
-    const distinctCities = await StoreModel.distinct('city');
+    const distinctCities = await StoreModel.distinct('city', { isDeleted: { $ne: true } });
     const totalCities = distinctCities.filter(Boolean).length;
 
     const safeTotal = Math.max(1, totalStores);
@@ -39,6 +67,8 @@ export class AdminStoresService {
     const offlinePercent = `${((offlineCount / safeTotal) * 100).toFixed(1)}%`;
     const pendingPercent = `${((pendingCount / safeTotal) * 100).toFixed(1)}%`;
     const suspendedPercent = `${((suspendedCount / safeTotal) * 100).toFixed(1)}%`;
+    const blockedPercent = `${((blockedCount / safeTotal) * 100).toFixed(1)}%`;
+    const deletedPercent = `${((deletedCount / safeTotal) * 100).toFixed(1)}%`;
 
     return {
       totalStores,
@@ -50,6 +80,10 @@ export class AdminStoresService {
       pendingPercent,
       suspendedStores: suspendedCount,
       suspendedPercent,
+      blockedStores: blockedCount,
+      blockedPercent,
+      deletedStores: deletedCount,
+      deletedPercent,
       totalCities
     };
   }
@@ -93,12 +127,27 @@ export class AdminStoresService {
     // 2. Status Filter
     if (query.status && query.status !== 'All') {
       const s = query.status.toUpperCase();
-      if (['ACTIVE', 'INACTIVE', 'SUSPENDED', 'PENDING'].includes(s)) {
-        filterObj.status = s;
-      } else if (query.status === 'Online') {
+      if (s === 'ACTIVE' || query.status === 'Active' || query.status === 'Online') {
         filterObj.status = 'ACTIVE';
-      } else if (query.status === 'Offline') {
+        filterObj.blocked = { $ne: true };
+        filterObj.isDeleted = { $ne: true };
+      } else if (s === 'BLOCKED' || query.status === 'Blocked') {
+        filterObj.$or = [{ status: 'BLOCKED' }, { blocked: true }];
+        filterObj.isDeleted = { $ne: true };
+      } else if (s === 'DELETED' || query.status === 'Deleted') {
+        filterObj.$or = [{ status: 'DELETED' }, { isDeleted: true }];
+      } else if (s === 'INACTIVE' || query.status === 'Offline') {
         filterObj.status = 'INACTIVE';
+        filterObj.blocked = { $ne: true };
+        filterObj.isDeleted = { $ne: true };
+      } else if (s === 'SUSPENDED' || query.status === 'Suspended') {
+        filterObj.status = 'SUSPENDED';
+        filterObj.blocked = { $ne: true };
+        filterObj.isDeleted = { $ne: true };
+      } else if (s === 'PENDING' || query.status === 'Pending') {
+        filterObj.status = 'PENDING';
+        filterObj.blocked = { $ne: true };
+        filterObj.isDeleted = { $ne: true };
       }
     }
 
@@ -118,76 +167,85 @@ export class AdminStoresService {
 
     // Fetch aggregated relations for each store
     const storeItems: AdminStoreListItem[] = await Promise.all(
-      storesRaw.map(async (s) => {
-        const storeId = s._id as mongoose.Types.ObjectId;
+      storesRaw.map(async (s: any) => {
+        const storeId = s._id;
 
-        // Print jobs count
-        const ordersCount = await PrintJobModel.countDocuments({ storeId });
-
-        // Revenue & Commission aggregation
-        const revenueAgg = await TransactionModel.aggregate([
-          { $match: { storeId, status: 'PAID' } },
-          {
-            $group: {
-              _id: null,
-              totalRevenue: { $sum: '$amount' },
-              totalPlatformFee: { $sum: '$platformFee' }
+        // Fetch counts & stats
+        const [ordersCount, revenueAgg, hasQr, printerCount] = await Promise.all([
+          PrintJobModel.countDocuments({ storeId }),
+          TransactionModel.aggregate([
+            { $match: { storeId, status: 'PAID' } },
+            {
+              $group: {
+                _id: null,
+                totalRevenue: { $sum: '$amount' },
+                totalPlatformFee: { $sum: '$platformFee' }
+              }
             }
-          }
+          ]),
+          QRLinkModel.exists({ storeId, isActive: true }),
+          PrinterModel.countDocuments({ storeId })
         ]);
 
         const revenueRaw = revenueAgg[0]?.totalRevenue || 0;
         const commissionRaw = revenueAgg[0]?.totalPlatformFee || Math.round(revenueRaw * 0.1);
 
-        // Printer count & status
-        const printerCount = await PrinterModel.countDocuments({ storeId });
-        const hasOnlinePrinter = await PrinterModel.exists({
-          storeId,
-          status: { $in: ['ONLINE', 'PRINTING'] }
-        });
-
-        // QR Status
-        const hasQr = await QRLinkModel.exists({ storeId, isActive: true });
-
-        // UI Status Mapping
-        let uiStatus: 'Online' | 'Offline' | 'Busy' | 'Suspended' | 'Pending' = 'Offline';
-        if (s.status === 'SUSPENDED') uiStatus = 'Suspended';
-        else if (s.status === 'PENDING' || !s.isVerified) uiStatus = 'Pending';
-        else if (s.status === 'ACTIVE') {
-          uiStatus = hasOnlinePrinter ? 'Online' : 'Offline';
+        // Derive UI Status
+        let uiStatus: 'Online' | 'Offline' | 'Busy' | 'Suspended' | 'Pending' | 'Blocked' | 'Deleted' = 'Online';
+        if (s.isDeleted || s.status === 'DELETED') {
+          uiStatus = 'Deleted';
+        } else if (s.blocked || s.status === 'BLOCKED') {
+          uiStatus = 'Blocked';
+        } else if (s.status === 'SUSPENDED') {
+          uiStatus = 'Suspended';
+        } else if (s.status === 'PENDING' || !s.isVerified) {
+          uiStatus = 'Pending';
+        } else if (s.status === 'INACTIVE') {
+          uiStatus = 'Offline';
+        } else {
+          uiStatus = 'Online';
         }
 
-        const initials =
-          s.name
-            .split(' ')
-            .slice(0, 2)
-            .map((w) => w[0])
-            .join('')
-            .toUpperCase() || 'SP';
+        const initials = s.name
+          ? s.name
+              .split(' ')
+              .map((w: string) => w[0])
+              .slice(0, 2)
+              .join('')
+              .toUpperCase()
+          : 'SP';
 
-        const lastActiveFormatted = s.updatedAt
-          ? new Date(s.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          : 'Recently';
-
+        // Format dates
         const joinedDateFormatted = s.createdAt
-          ? new Date(s.createdAt).toLocaleDateString('en-GB', {
-              day: '2-digit',
+          ? new Date(s.createdAt).toLocaleDateString('en-US', {
               month: 'short',
+              day: 'numeric',
               year: 'numeric'
             })
-          : 'Recent';
+          : 'Recently';
+
+        const lastActiveFormatted = s.updatedAt
+          ? new Date(s.updatedAt).toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit'
+            })
+          : 'Just now';
 
         return {
-          id: String(s._id),
-          storeIdCode: s.storeCode || `SP-${String(s._id).slice(-5).toUpperCase()}`,
+          id: s._id.toString(),
+          storeIdCode: s.storeCode || `SP-${s._id.toString().slice(-4).toUpperCase()}`,
           name: s.name,
           email: s.email,
           logoText: initials,
           logoBgColor:
             uiStatus === 'Online'
               ? 'bg-indigo-600 text-white'
-              : uiStatus === 'Suspended'
+              : uiStatus === 'Blocked'
               ? 'bg-rose-600 text-white'
+              : uiStatus === 'Deleted'
+              ? 'bg-slate-800 text-white'
+              : uiStatus === 'Suspended'
+              ? 'bg-amber-600 text-white'
               : 'bg-slate-700 text-white',
           ownerName: s.ownerName,
           ownerPhone: s.phone,
@@ -205,6 +263,11 @@ export class AdminStoresService {
           commissionRate: 10,
           status: uiStatus,
           rawStatus: s.status,
+          blocked: Boolean(s.blocked),
+          blockReason: s.blockReason || '',
+          blockedAt: s.blockedAt,
+          isDeleted: Boolean(s.isDeleted),
+          deletedAt: s.deletedAt,
           lastActive: lastActiveFormatted,
           printerCount,
           qrGenerated: Boolean(hasQr),
@@ -213,7 +276,7 @@ export class AdminStoresService {
       })
     );
 
-    const allCities = await StoreModel.distinct('city');
+    const allCities = await StoreModel.distinct('city', { isDeleted: { $ne: true } });
     const uniqueCities = allCities.filter(Boolean).sort();
 
     return {
@@ -251,9 +314,16 @@ export class AdminStoresService {
     const qrLink = await QRLinkModel.findOne({ storeId }).lean();
     const stats = await StoreDashboardStatsModel.findOne({ storeId }).lean();
 
-    const ordersCount = await PrintJobModel.countDocuments({ storeId });
+    const ordersCount = await PrintJobModel.countDocuments({
+      $or: [{ storeId }, { deletedStoreId: storeId.toString() }]
+    });
     const revenueAgg = await TransactionModel.aggregate([
-      { $match: { storeId, status: 'PAID' } },
+      {
+        $match: {
+          $or: [{ storeId }, { deletedStoreId: storeId.toString() }],
+          status: 'PAID'
+        }
+      },
       {
         $group: {
           _id: null,
@@ -306,7 +376,10 @@ export class AdminStoresService {
       storeCode,
       status: input.status || 'ACTIVE',
       isVerified: true,
-      printerConfigured: Boolean(input.printerCount && input.printerCount > 0)
+      printerConfigured: Boolean(input.printerCount && input.printerCount > 0),
+      blocked: false,
+      isDeleted: false,
+      tokenVersion: 0
     });
 
     // Initialize StoreSettings
@@ -365,7 +438,7 @@ export class AdminStoresService {
       pendingToday: 0
     });
 
-    // Dispatch Store Welcome Email asynchronously (non-blocking, never fails registration)
+    // Dispatch Store Welcome Email asynchronously
     const frontendBase =
       process.env.STORE_FRONTEND_URL ||
       process.env.FRONTEND_URL ||
@@ -402,7 +475,7 @@ export class AdminStoresService {
     if (input.pincode) updatePayload.pincode = input.pincode.trim();
     if (input.status) {
       const s = input.status.toUpperCase();
-      if (['ACTIVE', 'INACTIVE', 'SUSPENDED', 'PENDING'].includes(s)) {
+      if (['ACTIVE', 'INACTIVE', 'SUSPENDED', 'PENDING', 'BLOCKED', 'DELETED'].includes(s)) {
         updatePayload.status = s;
       }
     }
@@ -420,12 +493,14 @@ export class AdminStoresService {
    * 6. Toggle / update store status
    */
   public async updateStoreStatus(id: string, status: string) {
-    let normalizedStatus: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING' = 'ACTIVE';
+    let normalizedStatus: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING' | 'BLOCKED' | 'DELETED' = 'ACTIVE';
     const s = status.toUpperCase();
     if (s === 'ONLINE' || s === 'ACTIVE') normalizedStatus = 'ACTIVE';
     else if (s === 'OFFLINE' || s === 'INACTIVE') normalizedStatus = 'INACTIVE';
     else if (s === 'SUSPENDED') normalizedStatus = 'SUSPENDED';
     else if (s === 'PENDING') normalizedStatus = 'PENDING';
+    else if (s === 'BLOCKED') normalizedStatus = 'BLOCKED';
+    else if (s === 'DELETED') normalizedStatus = 'DELETED';
 
     const updated = await StoreModel.findByIdAndUpdate(
       id,
@@ -437,15 +512,259 @@ export class AdminStoresService {
   }
 
   /**
-   * 7. Soft delete / deactivate store
+   * 7. Block Store: Enforces immediate disconnection across all sessions, tokens, and hardware
    */
-  public async deleteStore(id: string) {
-    const deleted = await StoreModel.findByIdAndUpdate(
-      id,
-      { $set: { status: 'INACTIVE' } },
-      { new: true }
+  public async blockStore(id: string, reason: string, adminUser?: any) {
+    const store = await StoreModel.findById(id);
+    if (!store) return null;
+
+    const storeIdStr = store._id.toString();
+
+    store.blocked = true;
+    store.status = 'BLOCKED';
+    store.blockedAt = new Date();
+    store.blockedBy = adminUser?.id && mongoose.Types.ObjectId.isValid(adminUser.id)
+      ? new mongoose.Types.ObjectId(adminUser.id)
+      : undefined;
+    store.blockReason = reason ? reason.trim() : 'Administrative block';
+    store.tokenVersion = (store.tokenVersion || 0) + 1;
+    await store.save();
+
+    // 1. Unregister active connectors from memory registry
+    const connectors = await ConnectorModel.find({ storeId: store._id });
+    for (const c of connectors) {
+      connectorRegistry.unregisterConnector(c.connectorId);
+      c.status = 'OFFLINE';
+      c.state = 'OFFLINE';
+      await c.save();
+    }
+
+    // 2. Real-time WebSocket Disconnect & Notification
+    socketManager.emitToStore(storeIdStr, 'store_blocked', {
+      storeId: storeIdStr,
+      storeName: store.name,
+      reason: store.blockReason,
+      message: 'Your store has been blocked by the administrator. Please contact support.',
+      timestamp: new Date().toISOString()
+    });
+
+    socketManager.emitToStore(storeIdStr, 'force_logout', {
+      storeId: storeIdStr,
+      message: 'Your account has been blocked by the administrator.'
+    });
+
+    socketManager.emitToStore(storeIdStr, 'connector_disconnected', {
+      storeId: storeIdStr,
+      reason: 'Store Blocked by Administrator',
+      status: 'OFFLINE',
+      timestamp: new Date().toISOString()
+    });
+
+    // 3. Record Audit Log
+    try {
+      await AuditLogModel.create({
+        action: 'Blocked Store',
+        module: 'Stores',
+        severity: 'Warning',
+        status: 'Completed',
+        riskLevel: 'Medium',
+        actorId: adminUser?.id && mongoose.Types.ObjectId.isValid(adminUser.id) ? adminUser.id : undefined,
+        actorName: adminUser?.name || 'Administrator',
+        actorEmail: adminUser?.email || 'admin@selfprint.in',
+        actorRole: adminUser?.role || 'Super Admin',
+        targetEntity: 'STORE',
+        targetId: storeIdStr,
+        targetResource: store.name,
+        description: `Store "${store.name}" (${store.storeCode}) was blocked by admin. Reason: ${store.blockReason}`,
+        details: {
+          storeId: storeIdStr,
+          storeCode: store.storeCode,
+          reason: store.blockReason,
+          blockedAt: store.blockedAt
+        },
+        createdAt: new Date()
+      });
+    } catch (auditErr) {
+      logger.warn('[AdminStoresService] Audit log recording failed:', auditErr);
+    }
+
+    logger.info(`[AdminStoresService] Store "${store.name}" (${storeIdStr}) successfully BLOCKED. Reason: ${store.blockReason}`);
+    return store;
+  }
+
+  /**
+   * 8. Unblock Store: Restores access to normal operation
+   */
+  public async unblockStore(id: string, adminUser?: any) {
+    const store = await StoreModel.findById(id);
+    if (!store) return null;
+
+    const storeIdStr = store._id.toString();
+
+    store.blocked = false;
+    store.status = 'ACTIVE';
+    store.blockReason = '';
+    store.blockedAt = undefined;
+    store.blockedBy = undefined;
+    store.tokenVersion = (store.tokenVersion || 0) + 1;
+    await store.save();
+
+    // Real-time notification
+    socketManager.emitToStore(storeIdStr, 'store_unblocked', {
+      storeId: storeIdStr,
+      storeName: store.name,
+      timestamp: new Date().toISOString()
+    });
+
+    // Record Audit Log
+    try {
+      await AuditLogModel.create({
+        action: 'Unblocked Store',
+        module: 'Stores',
+        severity: 'Info',
+        status: 'Completed',
+        riskLevel: 'Low',
+        actorId: adminUser?.id && mongoose.Types.ObjectId.isValid(adminUser.id) ? adminUser.id : undefined,
+        actorName: adminUser?.name || 'Administrator',
+        actorEmail: adminUser?.email || 'admin@selfprint.in',
+        actorRole: adminUser?.role || 'Super Admin',
+        targetEntity: 'STORE',
+        targetId: storeIdStr,
+        targetResource: store.name,
+        description: `Store "${store.name}" (${store.storeCode}) was unblocked by admin.`,
+        details: { storeId: storeIdStr, storeCode: store.storeCode },
+        createdAt: new Date()
+      });
+    } catch (auditErr) {
+      logger.warn('[AdminStoresService] Audit log recording failed:', auditErr);
+    }
+
+    logger.info(`[AdminStoresService] Store "${store.name}" (${storeIdStr}) successfully UNBLOCKED.`);
+    return store;
+  }
+
+  /**
+   * 9. Permanent Delete Store: Cascade database cleanup, order preservation, and full session revocation
+   */
+  public async deleteStore(id: string, adminUser?: any) {
+    const store = await StoreModel.findById(id);
+    if (!store) return null;
+
+    const storeId = store._id;
+    const storeIdStr = store._id.toString();
+    const storeName = store.name;
+    const storeCode = store.storeCode;
+
+    // 1. Immediately invalidate WebSocket sessions & notify all connected clients/desktop
+    socketManager.emitToStore(storeIdStr, 'store_deleted', {
+      storeId: storeIdStr,
+      storeName,
+      message: 'This store has been deleted by the administrator.',
+      timestamp: new Date().toISOString()
+    });
+
+    socketManager.emitToStore(storeIdStr, 'force_logout', {
+      storeId: storeIdStr,
+      message: 'This store has been deleted by the administrator.'
+    });
+
+    socketManager.emitToStore(storeIdStr, 'connector_unpaired', {
+      storeId: storeIdStr,
+      timestamp: new Date().toISOString()
+    });
+
+    socketManager.emitToStore(storeIdStr, 'connector_disconnected', {
+      storeId: storeIdStr,
+      status: 'OFFLINE',
+      state: 'NOT_PAIRED',
+      reason: 'Store Deleted by Administrator',
+      timestamp: new Date().toISOString()
+    });
+
+    // 2. Preserve Orders & History for Audit (replace storeId with deletedStoreId)
+    await PrintJobModel.updateMany(
+      { storeId },
+      {
+        $set: {
+          storeId: null,
+          deletedStoreId: storeIdStr,
+          deletedStoreName: storeName
+        }
+      }
     );
-    return deleted;
+
+    // 3. Preserve Financial Transactions for Audit
+    await TransactionModel.updateMany(
+      { storeId },
+      {
+        $set: {
+          storeId: null,
+          deletedStoreId: storeIdStr,
+          deletedStoreName: storeName
+        }
+      }
+    );
+
+    // 4. Delete all Pairing Codes
+    await PairingCodeModel.deleteMany({ storeId });
+
+    // 5. Unregister and delete Connectors
+    const connectors = await ConnectorModel.find({ storeId });
+    for (const c of connectors) {
+      connectorRegistry.unregisterConnector(c.connectorId);
+    }
+    await ConnectorModel.deleteMany({ storeId });
+
+    // 6. Delete Printers & Hardware Mappings
+    await PrinterModel.deleteMany({ storeId });
+
+    // 7. Delete Store Settings, Bank Details, QR Standees, Notifications & Stats
+    await StoreSettingsModel.deleteMany({ storeId });
+    await StoreBankAccountModel.deleteMany({ storeId });
+    await QRLinkModel.deleteMany({ storeId });
+    await QRHistoryModel.deleteMany({ storeId });
+    await StoreDashboardStatsModel.deleteMany({ storeId });
+    await StoreNotificationModel.deleteMany({ storeId });
+
+    // 8. Delete the Store Document from MongoDB
+    await StoreModel.deleteOne({ _id: storeId });
+
+    // 9. Record Comprehensive Audit Log
+    try {
+      await AuditLogModel.create({
+        action: 'Deleted Store',
+        module: 'Stores',
+        severity: 'Critical',
+        status: 'Completed',
+        riskLevel: 'Critical',
+        actorId: adminUser?.id && mongoose.Types.ObjectId.isValid(adminUser.id) ? adminUser.id : undefined,
+        actorName: adminUser?.name || 'Administrator',
+        actorEmail: adminUser?.email || 'admin@selfprint.in',
+        actorRole: adminUser?.role || 'Super Admin',
+        targetEntity: 'STORE',
+        targetId: storeIdStr,
+        targetResource: storeName,
+        description: `Store "${storeName}" (${storeCode}) was permanently deleted by admin. Live connectors and settings were cleaned up; historical print jobs and financial records were preserved for audit.`,
+        details: {
+          deletedStoreId: storeIdStr,
+          storeName,
+          storeCode,
+          ownerEmail: store.email,
+          ownerPhone: store.phone
+        },
+        createdAt: new Date()
+      });
+    } catch (auditErr) {
+      logger.warn('[AdminStoresService] Audit log recording failed:', auditErr);
+    }
+
+    logger.info(`[AdminStoresService] Store "${storeName}" (${storeIdStr}) PERMANENTLY DELETED and cleaned up.`);
+
+    return {
+      deleted: true,
+      storeId: storeIdStr,
+      storeName
+    };
   }
 }
 
