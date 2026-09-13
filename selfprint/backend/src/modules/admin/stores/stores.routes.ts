@@ -159,5 +159,28 @@ adminStoresRouter.post(
   authorize("stores", "edit"),
   adminStoresController.createSettlement
 );
+
+/**
+ * @route   GET /api/v1/admin/stores/:id/settlements/statement
+ * @desc    Generate downloadable settlement statement (CSV / PDF)
+ */
+adminStoresRouter.get(
+  '/:id/settlements/statement',
+  authenticate,
+  authorize('stores', 'view'),
+  adminStoresController.getSettlementStatement
+);
+
+/**
+ * @route   POST /api/v1/admin/stores/:id/bank-details
+ * @desc    Update merchant payout bank account details with audit log
+ */
+adminStoresRouter.post(
+  '/:id/bank-details',
+  authenticate,
+  authorize('stores', 'edit'),
+  adminStoresController.updateStoreBankDetails
+);
+
 export default adminStoresRouter;
 export { adminStoresRouter };

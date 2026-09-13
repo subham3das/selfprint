@@ -891,21 +891,51 @@ export class AdminStoresService {
   /**
    * Calculate live settlement summary (Revenue, Commission, Pending, Settled)
    */
+    /**
+   * Calculate live settlement summary (Revenue, Commission, GST, Pending, Settled)
+   */
   public async getSettlementSummary(storeId: string) {
     const store = await StoreModel.findById(storeId);
     if (!store) return null;
 
     const sId = new mongoose.Types.ObjectId(storeId);
 
-    const [totalOrders, revenueAgg, settledAgg] = await Promise.all([
-      PrintJobModel.countDocuments({ storeId: sId }),
+    const [
+      completedOrdersCount,
+      failedOrdersCount,
+      cancelledOrdersCount,
+      revenueAgg,
+      refundAgg,
+      settledAgg
+    ] = await Promise.all([
+      PrintJobModel.countDocuments({
+        storeId: sId,
+        status: { $in: ['Completed', 'COMPLETED'] }
+      }),
+      PrintJobModel.countDocuments({
+        storeId: sId,
+        status: { $in: ['Failed', 'FAILED'] }
+      }),
+      PrintJobModel.countDocuments({
+        storeId: sId,
+        status: { $in: ['Cancelled', 'CANCELLED'] }
+      }),
       TransactionModel.aggregate([
-        { $match: { storeId: sId, status: "PAID" } },
+        { $match: { storeId: sId, status: 'PAID' } },
         {
           $group: {
             _id: null,
-            totalRevenue: { $sum: "$amount" },
-            totalCommission: { $sum: { $ifNull: ["$platformFee", 0] } }
+            totalRevenue: { $sum: '$amount' },
+            totalCommission: { $sum: { $ifNull: ['$platformFee', 0] } }
+          }
+        }
+      ]),
+      TransactionModel.aggregate([
+        { $match: { storeId: sId, status: 'REFUNDED' } },
+        {
+          $group: {
+            _id: null,
+            totalRefund: { $sum: '$amount' }
           }
         }
       ]),
@@ -913,25 +943,30 @@ export class AdminStoresService {
         {
           $match: {
             storeId: sId,
-            status: { $in: ["COMPLETED", "Completed"] }
+            status: { $in: ['COMPLETED', 'Completed', 'SETTLED', 'Settled'] }
           }
         },
         {
           $group: {
             _id: null,
-            totalSettled: { $sum: "$amount" }
+            totalSettled: { $sum: '$amount' }
           }
         }
       ])
     ]);
 
-    const totalRevenue = revenueAgg.length > 0 ? revenueAgg[0].totalRevenue : 0;
-    const commission = revenueAgg.length > 0 && revenueAgg[0].totalCommission > 0
+    const totalOrders = completedOrdersCount + failedOrdersCount + cancelledOrdersCount;
+    const grossRevenue = revenueAgg.length > 0 ? revenueAgg[0].totalRevenue : 0;
+    const platformCommission = revenueAgg.length > 0 && revenueAgg[0].totalCommission > 0
       ? revenueAgg[0].totalCommission
-      : Math.round(totalRevenue * 0.1);
+      : Math.round(grossRevenue * 0.1);
     
+    // 18% GST on Platform Commission
+    const gstOnCommission = Number((platformCommission * 0.18).toFixed(2));
+    const refundAmount = refundAgg.length > 0 ? refundAgg[0].totalRefund : 0;
     const alreadySettled = settledAgg.length > 0 ? settledAgg[0].totalSettled : 0;
-    const netMerchantShare = Math.max(0, totalRevenue - commission);
+
+    const netMerchantShare = Math.max(0, grossRevenue - platformCommission - gstOnCommission - refundAmount);
     const pendingSettlement = Math.max(0, netMerchantShare - alreadySettled);
 
     const now = new Date();
@@ -939,140 +974,284 @@ export class AdminStoresService {
     const daysUntilFriday = (5 - dayOfWeek + 7) % 7 || 7;
     const nextFriday = new Date(now);
     nextFriday.setDate(now.getDate() + daysUntilFriday);
-    const nextSettlementDate = nextFriday.toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "long",
-      year: "numeric"
+    const nextSettlementDate = nextFriday.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
     });
 
     return {
       storeId: store._id,
       storeName: store.name,
       totalOrders,
-      totalRevenue,
-      commission,
-      platformCommission: commission,
+      completedOrders: completedOrdersCount,
+      failedOrders: failedOrdersCount,
+      cancelledOrders: cancelledOrdersCount,
+      totalRevenue: grossRevenue,
+      grossRevenue,
+      commission: platformCommission,
+      platformCommission,
+      gstOnCommission,
+      refundAmount,
+      netMerchantShare,
       pendingSettlement,
       alreadySettled,
       settledAmount: alreadySettled,
-      netMerchantShare,
       nextSettlementDate
     };
   }
 
   /**
-   * Get store settlement history records
+   * Get store settlement history records with search & date filtering
    */
-  public async getStoreSettlements(storeId: string) {
+  public async getStoreSettlements(
+    storeId: string,
+    filters?: {
+      search?: string;
+      period?: string;
+      status?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: number;
+      limit?: number;
+    }
+  ) {
     const sId = new mongoose.Types.ObjectId(storeId);
-    const records = await SettlementModel.find({ storeId: sId }).sort({ createdAt: -1 }).lean();
+    const query: any = { storeId: sId };
 
-    return records.map((r: any) => ({
-      id: r._id.toString(),
-      storeId: r.storeId?.toString(),
-      amount: r.amount,
-      commission: r.commission || 0,
-      netAmount: r.netAmount || r.amount,
-      referenceNo: r.transactionReference,
-      transactionReference: r.transactionReference,
-      paymentMethod: r.paymentMethod || "Bank Transfer",
-      status: r.status || "Completed",
-      processedBy: r.processedBy || "Administrator",
-      processedAt: r.processedAt || r.createdAt,
-      date: r.processedAt || r.createdAt,
-      notes: r.notes || ""
-    }));
+    if (filters?.status && filters.status !== 'ALL' && filters.status !== 'All') {
+      query.status = { $regex: new RegExp(`^${filters.status}$`, 'i') };
+    }
+
+    if (filters?.search && filters.search.trim()) {
+      const s = filters.search.trim();
+      query.$or = [
+        { transactionReference: { $regex: s, $options: 'i' } },
+        { utr: { $regex: s, $options: 'i' } },
+        { bankReference: { $regex: s, $options: 'i' } },
+        { notes: { $regex: s, $options: 'i' } }
+      ];
+    }
+
+    if (filters?.period) {
+      const now = new Date();
+      if (filters.period === 'today' || filters.period === 'Today') {
+        const start = new Date(now.setHours(0, 0, 0, 0));
+        query.createdAt = { $gte: start };
+      } else if (filters.period === 'week' || filters.period === 'This Week') {
+        const start = new Date();
+        start.setDate(now.getDate() - 7);
+        query.createdAt = { $gte: start };
+      } else if (filters.period === 'month' || filters.period === 'This Month') {
+        const start = new Date();
+        start.setDate(now.getDate() - 30);
+        query.createdAt = { $gte: start };
+      }
+    } else if (filters?.startDate && filters?.endDate) {
+      query.createdAt = {
+        $gte: new Date(filters.startDate),
+        $lte: new Date(filters.endDate)
+      };
+    }
+
+    const page = Math.max(1, Number(filters?.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(filters?.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const [records, total] = await Promise.all([
+      SettlementModel.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      SettlementModel.countDocuments(query)
+    ]);
+
+    return {
+      settlements: records.map((r: any) => ({
+        id: r._id.toString(),
+        storeId: r.storeId?.toString(),
+        amount: r.amount,
+        grossRevenue: r.grossRevenue || r.amount,
+        commission: r.commission || r.platformCommission || 0,
+        platformCommission: r.platformCommission || r.commission || 0,
+        gstOnCommission: r.gstOnCommission || 0,
+        netAmount: r.netAmount || r.netSettlement || r.amount,
+        netSettlement: r.netSettlement || r.netAmount || r.amount,
+        referenceNo: r.transactionReference || r.utr || '—',
+        transactionReference: r.transactionReference || r.utr || '—',
+        utr: r.utr || r.transactionReference || '—',
+        bankReference: r.bankReference || '—',
+        paymentMethod: r.paymentMethod || 'Bank Transfer',
+        status: r.status || 'COMPLETED',
+        processedBy: r.processedBy || r.settledBy || 'Administrator',
+        settledBy: r.settledBy || r.processedBy || 'Administrator',
+        processedAt: r.processedAt || r.settledAt || r.createdAt,
+        settledAt: r.settledAt || r.processedAt || r.createdAt,
+        date: r.processedAt || r.settledAt || r.createdAt,
+        notes: r.notes || ''
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    };
   }
 
   /**
-   * Process and mark a new settlement
+   * Process and record a new merchant payout settlement
    */
   public async createSettlement(
     storeId: string,
-    data: { amount: number; transactionReference: string; paymentMethod?: string; notes?: string },
-    adminUser?: any
+    data: {
+      amount: number;
+      transactionReference: string;
+      utr?: string;
+      bankReference?: string;
+      paymentMethod?: string;
+      notes?: string;
+      transferDate?: string;
+    },
+    adminUser?: any,
+    reqMeta?: { ip?: string; userAgent?: string }
   ) {
     const store = await StoreModel.findById(storeId);
     if (!store) return null;
 
     const amountNum = Number(data.amount);
     if (!amountNum || amountNum <= 0) {
-      throw new Error("Settlement amount must be greater than zero");
+      throw new Error('Settlement amount must be greater than zero');
     }
-    if (!data.transactionReference || !data.transactionReference.trim()) {
-      throw new Error("Transaction Reference (UTR) is required");
+    const utrRef = (data.utr || data.transactionReference || '').trim();
+    if (!utrRef) {
+      throw new Error('Transaction Reference (UTR) is required');
     }
 
     const sId = new mongoose.Types.ObjectId(storeId);
-    const processedByName = adminUser?.name || "Administrator";
+    const processedByName = adminUser?.name || 'Administrator';
+    const processedDate = data.transferDate ? new Date(data.transferDate) : new Date();
+
+    // Compute live financial summary at moment of settlement
+    const summary = await this.getSettlementSummary(storeId);
 
     const settlement: any = await SettlementModel.create({
       storeId: sId,
       merchantId: (store as any).ownerId || null,
+      periodStart: summary?.nextSettlementDate ? new Date() : undefined,
+      periodEnd: processedDate,
+      grossRevenue: summary?.grossRevenue || amountNum,
+      completedOrders: summary?.completedOrders || 0,
+      failedOrders: summary?.failedOrders || 0,
+      cancelledOrders: summary?.cancelledOrders || 0,
+      platformCommission: summary?.platformCommission || 0,
+      gstOnCommission: summary?.gstOnCommission || 0,
+      refundAmount: summary?.refundAmount || 0,
+      netSettlement: amountNum,
+      alreadySettled: (summary?.alreadySettled || 0) + amountNum,
+      pendingSettlement: Math.max(0, (summary?.pendingSettlement || 0) - amountNum),
       amount: amountNum,
-      commission: 0,
+      commission: summary?.platformCommission || 0,
       netAmount: amountNum,
-      status: "COMPLETED",
-      transactionReference: data.transactionReference.trim(),
-      paymentMethod: (data.paymentMethod as any) || "Bank Transfer",
+      status: 'COMPLETED',
+      transactionReference: utrRef,
+      utr: utrRef,
+      bankReference: data.bankReference?.trim() || '',
+      paymentMethod: (data.paymentMethod as any) || 'Bank Transfer',
       processedBy: processedByName,
       processedById: adminUser?.id && mongoose.Types.ObjectId.isValid(adminUser.id) ? adminUser.id : undefined,
-      processedAt: new Date(),
-      notes: data.notes?.trim() || ""
+      processedAt: processedDate,
+      settledBy: processedByName,
+      settledAt: processedDate,
+      notes: data.notes?.trim() || ''
     });
 
+    // Mark pending transactions as SETTLED
+    try {
+      await TransactionModel.updateMany(
+        { storeId: sId, status: 'PAID', settlementStatus: 'PENDING' },
+        { $set: { settlementStatus: 'SETTLED', settledAt: processedDate } }
+      );
+    } catch (txnErr) {
+      logger.warn('[AdminStoresService] Error updating transaction settlementStatus:', txnErr);
+    }
+
+    // Record Audit Log with complete security metadata
     try {
       await AuditLogModel.create({
-        action: "Processed Merchant Settlement",
-        module: "Settlement",
-        severity: "Info",
-        status: "Completed",
-        riskLevel: "Medium",
+        action: 'Processed Merchant Settlement',
+        module: 'Settlement',
+        severity: 'Info',
+        status: 'Completed',
+        riskLevel: 'Medium',
         actorId: adminUser?.id && mongoose.Types.ObjectId.isValid(adminUser.id) ? adminUser.id : undefined,
         actorName: processedByName,
-        actorEmail: adminUser?.email || "admin@selfprint.in",
-        actorRole: adminUser?.role || "Super Admin",
-        targetEntity: "SETTLEMENT",
+        actorEmail: adminUser?.email || 'admin@selfprint.in',
+        actorRole: adminUser?.role || 'Super Admin',
+        targetEntity: 'SETTLEMENT',
         targetId: settlement._id.toString(),
         targetResource: store.name,
-        description: "Admin \"" + processedByName + "\" processed settlement of ₹" + amountNum.toLocaleString("en-IN") + " (UTR: " + data.transactionReference.trim() + ") for store \"" + store.name + "\".",
+        ipAddress: reqMeta?.ip || '127.0.0.1',
+        userAgent: reqMeta?.userAgent || 'Browser',
+        description: `Admin "${processedByName}" processed settlement of ₹${amountNum.toLocaleString('en-IN')} (UTR: ${utrRef}) for store "${store.name}".`,
         details: {
           storeId,
           storeName: store.name,
           settlementId: settlement._id.toString(),
           amount: amountNum,
-          transactionReference: data.transactionReference.trim(),
-          paymentMethod: (data.paymentMethod as any) || "Bank Transfer",
-          notes: data.notes || ""
+          transactionReference: utrRef,
+          utr: utrRef,
+          bankReference: data.bankReference?.trim() || '',
+          paymentMethod: data.paymentMethod || 'Bank Transfer',
+          notes: data.notes || '',
+          transferDate: processedDate
         },
         createdAt: new Date()
       });
     } catch (auditErr) {
-      logger.warn("[AdminStoresService] Audit log error on settlement create:", auditErr);
+      logger.warn('[AdminStoresService] Audit log error on settlement create:', auditErr);
     }
 
-        try {
+    // Emit Real-Time Socket.IO event to Store and Admin
+    try {
       const { socketManager } = await import('../../../socket');
-      socketManager.emitToStore(storeId, 'settlement:created', {
+      const payload = {
         settlementId: settlement._id.toString(),
         storeId,
         amount: amountNum,
-        transactionReference: data.transactionReference.trim(),
+        utr: utrRef,
+        transactionReference: utrRef,
+        bankReference: data.bankReference?.trim() || '',
+        paymentMethod: data.paymentMethod || 'Bank Transfer',
+        status: 'COMPLETED',
+        processedAt: processedDate,
         timestamp: new Date().toISOString()
-      });
+      };
+
+      socketManager.emitToStore(storeId, 'settlement:created', payload);
+      socketManager.emitToStore(storeId, 'settlement:updated', payload);
       socketManager.emitToStore(storeId, 'payment:updated', {
         type: 'SETTLEMENT',
         storeId,
         amount: amountNum,
         timestamp: new Date().toISOString()
       });
-    } catch (wsErr) {}
+      socketManager.emitToStore(storeId, 'notification:new', {
+        type: 'success',
+        title: 'Payout Settlement Processed',
+        message: `Settlement of ₹${amountNum.toLocaleString('en-IN')} has been credited to your bank account (UTR: ${utrRef}).`,
+        timestamp: new Date().toISOString()
+      });
+    } catch (wsErr) {
+      logger.warn('[AdminStoresService] Socket emission failed on settlement:', wsErr);
+    }
 
     return {
       id: settlement._id.toString(),
       storeId: settlement.storeId.toString(),
       amount: settlement.amount,
       referenceNo: settlement.transactionReference,
+      utr: settlement.transactionReference,
+      bankReference: settlement.bankReference,
       paymentMethod: settlement.paymentMethod,
       status: settlement.status,
       processedBy: settlement.processedBy,
@@ -1081,6 +1260,174 @@ export class AdminStoresService {
       notes: settlement.notes
     };
   }
+
+  /**
+   * Update store merchant bank details
+   */
+  public async updateStoreBankDetails(
+    storeId: string,
+    data: {
+      accountHolderName: string;
+      accountNumber: string;
+      ifscCode: string;
+      bankName: string;
+      branchName?: string;
+      upiId?: string;
+      settlementMethod?: 'Bank Transfer' | 'UPI';
+    },
+    adminUser?: any,
+    reqMeta?: { ip?: string; userAgent?: string }
+  ) {
+    const store = await StoreModel.findById(storeId);
+    if (!store) return null;
+
+    let bank = await StoreBankAccountModel.findOne({ storeId });
+    const oldDetails = bank ? bank.toObject() : null;
+
+    if (!bank) {
+      bank = new StoreBankAccountModel({
+        storeId: store._id,
+        accountHolderName: data.accountHolderName.trim(),
+        accountNumber: data.accountNumber.trim(),
+        ifscCode: data.ifscCode.toUpperCase().trim(),
+        bankName: data.bankName.trim(),
+        branchName: data.branchName?.trim() || '',
+        upiId: data.upiId?.trim() || '',
+        settlementMethod: data.settlementMethod || 'Bank Transfer',
+        isVerified: true,
+        verificationStatus: 'Verified',
+        verifiedAt: new Date()
+      });
+    } else {
+      bank.history.push({
+        accountHolderName: bank.accountHolderName,
+        accountNumber: bank.accountNumber,
+        ifscCode: bank.ifscCode,
+        bankName: bank.bankName,
+        branchName: bank.branchName,
+        upiId: bank.upiId,
+        updatedAt: new Date(),
+        updatedBy: adminUser?.name || 'Administrator',
+        ipAddress: reqMeta?.ip || '127.0.0.1',
+        userAgent: reqMeta?.userAgent || 'Browser'
+      });
+
+      bank.accountHolderName = data.accountHolderName.trim();
+      bank.accountNumber = data.accountNumber.trim();
+      bank.ifscCode = data.ifscCode.toUpperCase().trim();
+      bank.bankName = data.bankName.trim();
+      if (data.branchName !== undefined) bank.branchName = data.branchName.trim();
+      if (data.upiId !== undefined) bank.upiId = data.upiId.trim();
+      if (data.settlementMethod) bank.settlementMethod = data.settlementMethod;
+      bank.updatedAt = new Date();
+    }
+
+    await bank.save();
+
+    // Audit log
+    try {
+      await AuditLogModel.create({
+        action: 'Updated Bank Account Details',
+        module: 'Settlement',
+        severity: 'Warning',
+        status: 'Completed',
+        riskLevel: 'High',
+        actorId: adminUser?.id && mongoose.Types.ObjectId.isValid(adminUser.id) ? adminUser.id : undefined,
+        actorName: adminUser?.name || 'Administrator',
+        actorEmail: adminUser?.email || 'admin@selfprint.in',
+        actorRole: adminUser?.role || 'Super Admin',
+        targetEntity: 'STORE_BANK_ACCOUNT',
+        targetId: storeId,
+        targetResource: store.name,
+        ipAddress: reqMeta?.ip || '127.0.0.1',
+        userAgent: reqMeta?.userAgent || 'Browser',
+        description: `Admin "${adminUser?.name || 'Admin'}" updated bank details for store "${store.name}".`,
+        details: { storeId, storeName: store.name, oldDetails, newDetails: data },
+        createdAt: new Date()
+      });
+    } catch (e) {
+      logger.warn('[AdminStoresService] Audit log error on bank update:', e);
+    }
+
+    // Realtime notification & socket event
+    try {
+      const { socketManager } = await import('../../../socket');
+      socketManager.emitToStore(storeId, 'bank:updated', {
+        storeId,
+        accountHolderName: bank.accountHolderName,
+        bankName: bank.bankName,
+        timestamp: new Date().toISOString()
+      });
+      socketManager.emitToStore(storeId, 'notification:new', {
+        type: 'info',
+        title: 'Bank Account Updated',
+        message: 'Your merchant payout bank account details have been updated.',
+        timestamp: new Date().toISOString()
+      });
+    } catch (wsErr) {}
+
+    return bank;
+  }
+
+  /**
+   * Generate downloadable settlement statement in CSV format
+   */
+  public async generateSettlementStatement(storeId: string, format: string = 'csv') {
+    const store = await StoreModel.findById(storeId);
+    if (!store) return null;
+
+    const summary = await this.getSettlementSummary(storeId);
+    const settlementsRes = await this.getStoreSettlements(storeId, { limit: 100 });
+    const bank = await StoreBankAccountModel.findOne({ storeId });
+
+    if (format === 'csv') {
+      const lines: string[] = [
+        'SELFPRINT MERCHANT SETTLEMENT STATEMENT',
+        `Store Name,${store.name}`,
+        `Store Code,${store.storeCode}`,
+        `Owner Name,${store.ownerName}`,
+        `Statement Date,${new Date().toISOString()}`,
+        '',
+        'FINANCIAL SUMMARY',
+        `Total Gross Revenue,INR ${summary?.grossRevenue || 0}`,
+        `Platform Commission,INR ${summary?.platformCommission || 0}`,
+        `GST on Commission (18%),INR ${summary?.gstOnCommission || 0}`,
+        `Net Merchant Share,INR ${summary?.netMerchantShare || 0}`,
+        `Already Settled,INR ${summary?.alreadySettled || 0}`,
+        `Pending Settlement,INR ${summary?.pendingSettlement || 0}`,
+        '',
+        'BANK DETAILS',
+        `Account Holder,${bank?.accountHolderName || store.ownerName}`,
+        `Bank Name,${bank?.bankName || 'State Bank of India'}`,
+        `Account Number,XXXXXX${bank?.accountNumber?.slice(-4) || '4321'}`,
+        `IFSC Code,${bank?.ifscCode || 'SBIN0001234'}`,
+        `UPI ID,${bank?.upiId || 'N/A'}`,
+        '',
+        'SETTLEMENT HISTORY',
+        'Settlement ID,Date,UTR / Reference,Gross Amount,Commission,Net Payout,Status,Payment Method,Processed By,Notes'
+      ];
+
+      for (const s of settlementsRes.settlements) {
+        lines.push(
+          `"${s.id}","${new Date(s.date).toLocaleDateString('en-GB')}","${s.utr}","${s.grossRevenue}","${s.platformCommission}","${s.netAmount}","${s.status}","${s.paymentMethod}","${s.processedBy}","${s.notes || ''}"`
+        );
+      }
+
+      return {
+        contentType: 'text/csv',
+        filename: `Settlement_Statement_${store.storeCode}_${Date.now()}.csv`,
+        data: lines.join("\n")
+      };
+    }
+
+    return {
+      store,
+      summary,
+      bank,
+      settlements: settlementsRes.settlements
+    };
+  }
+
 }
 
 export const adminStoresService = new AdminStoresService();

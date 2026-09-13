@@ -247,6 +247,78 @@ export class AdminStoresController extends BaseController {
       next(error);
     }
   };
+  /**
+   * GET /api/v1/admin/stores/:id/settlements/statement
+   */
+  public getSettlementStatement = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const format = (req.query.format as string) || 'csv';
+
+      const statement = await adminStoresService.generateSettlementStatement(id, format);
+      if (!statement) {
+        ApiResponse.error(res, 'Store not found', HTTP_STATUS.NOT_FOUND);
+        return;
+      }
+
+      if (format === 'csv') {
+        res.setHeader('Content-Type', statement.contentType || 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${statement.filename}"`);
+        res.send(statement.data);
+        return;
+      }
+
+      this.sendSuccess(res, 'Settlement statement generated', statement);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * PUT/POST /api/v1/admin/stores/:id/bank-details
+   */
+  public updateStoreBankDetails = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { accountHolderName, accountNumber, ifscCode, bankName, branchName, upiId, settlementMethod } = req.body;
+
+      if (!accountHolderName || !accountNumber || !ifscCode || !bankName) {
+        ApiResponse.error(res, 'Account holder, account number, IFSC and bank name are required', HTTP_STATUS.BAD_REQUEST);
+        return;
+      }
+
+      const adminUser = (req as any).user;
+      const reqMeta = {
+        ip: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1',
+        userAgent: req.headers['user-agent'] || 'Browser'
+      };
+
+      const updated = await adminStoresService.updateStoreBankDetails(
+        id,
+        { accountHolderName, accountNumber, ifscCode, bankName, branchName, upiId, settlementMethod },
+        adminUser,
+        reqMeta
+      );
+
+      if (!updated) {
+        ApiResponse.error(res, 'Store not found', HTTP_STATUS.NOT_FOUND);
+        return;
+      }
+
+      this.sendSuccess(res, 'Bank details updated successfully', { bankDetails: updated });
+    } catch (error) {
+      next(error);
+    }
+  };
+
 }
 
 export const adminStoresController = new AdminStoresController();

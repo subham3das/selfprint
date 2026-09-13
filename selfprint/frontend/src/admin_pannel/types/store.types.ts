@@ -102,6 +102,13 @@ export interface StoreBankDetails {
 }
 
 export interface SettlementSummaryData {
+  completedOrders?: number;
+  failedOrders?: number;
+  cancelledOrders?: number;
+  grossRevenue?: number;
+  gstOnCommission?: number;
+  refundAmount?: number;
+
   storeId: string;
   storeName: string;
   totalOrders: number;
@@ -116,6 +123,13 @@ export interface SettlementSummaryData {
 }
 
 export interface SettlementRecord {
+  utr?: string;
+  bankReference?: string;
+  grossRevenue?: number;
+  platformCommission?: number;
+  gstOnCommission?: number;
+  netSettlement?: number;
+
   id: string;
   storeId: string;
   amount: number;

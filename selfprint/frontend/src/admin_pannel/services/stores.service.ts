@@ -155,12 +155,13 @@ export const adminStoresService = {
     return res.data?.data;
   },
 
-  /**
+/**
    * Fetch settlement history records for a store
    */
-  async fetchStoreSettlements(id: string): Promise<SettlementRecord[]> {
-    const res = await apiClient.get(`/admin/stores/${id}/settlements`);
-    return res.data?.data;
+  async fetchStoreSettlements(id: string, params?: any): Promise<SettlementRecord[]> {
+    const res = await apiClient.get(`/admin/stores/${id}/settlements`, { params });
+    const d = res.data?.data;
+    return Array.isArray(d) ? d : (d?.settlements || []);
   },
 
   /**
@@ -169,6 +170,24 @@ export const adminStoresService = {
   async createSettlement(id: string, data: CreateSettlementInput): Promise<SettlementRecord> {
     const res = await apiClient.post(`/admin/stores/${id}/settlements`, data);
     return res.data?.data;
+  },
+
+  /**
+   * Update store bank details
+   */
+  async updateStoreBankDetails(id: string, data: any) {
+    const res = await apiClient.post(`/admin/stores/${id}/bank-details`, data);
+    return res.data?.data;
+  },
+
+  /**
+   * Download settlement statement
+   */
+  async downloadStatement(id: string, format: string = 'csv'): Promise<Blob | any> {
+    const res = await apiClient.get(`/admin/stores/${id}/settlements/statement?format=${format}`, {
+      responseType: format === 'csv' ? 'blob' : 'json'
+    });
+    return res.data;
   }
 
 };

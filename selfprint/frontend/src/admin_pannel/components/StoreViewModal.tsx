@@ -1,3 +1,4 @@
+import { getSocket } from '@/lib/socket';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -73,6 +74,31 @@ export const StoreViewModal: React.FC<StoreViewModalProps> = ({
     loadBankData();
   }, [store?.id]);
 
+  // Real-time Socket.IO synchronization for live settlement and payment updates
+  useEffect(() => {
+    if (!store?.id) return;
+    try {
+      const socket = getSocket();
+      if (!socket) return;
+
+      const handleLiveUpdate = () => {
+        loadBankData();
+      };
+
+      socket.on('settlement:created', handleLiveUpdate);
+      socket.on('settlement:updated', handleLiveUpdate);
+      socket.on('payment:updated', handleLiveUpdate);
+      socket.on('bank:updated', handleLiveUpdate);
+
+      return () => {
+        socket.off('settlement:created', handleLiveUpdate);
+        socket.off('settlement:updated', handleLiveUpdate);
+        socket.off('payment:updated', handleLiveUpdate);
+        socket.off('bank:updated', handleLiveUpdate);
+      };
+    } catch {}
+  }, [store?.id]);
+
   const loadBankData = async () => {
     if (!store?.id) return;
     setIsSummaryLoading(true);
@@ -143,32 +169,24 @@ export const StoreViewModal: React.FC<StoreViewModalProps> = ({
     }
   };
 
-  const handleDownloadStatement = async () => {
+    const handleDownloadStatement = async (format: string = 'csv') => {
     if (!store?.id) return;
-    if (store?.id) {
-      adminStoresService.logBankDetailsAccess(store.id, 'DOWNLOAD_STATEMENT').catch(() => {});
+    try {
+      if (store?.id) {
+        adminStoresService.logBankDetailsAccess(store.id, 'DOWNLOAD_STATEMENT').catch(() => {});
+      }
+      const data = await adminStoresService.downloadStatement(store.id, format);
+      const blob = data instanceof Blob ? data : new Blob([data], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Settlement_Statement_${store.storeIdCode || store.id}_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      console.error('Failed to download statement:', err);
     }
-
-    const headers = ['Date', 'Reference No (UTR)', 'Method', 'Amount (INR)', 'Commission (INR)', 'Status', 'Processed By', 'Notes'];
-    const rows = settlements.map((s) => [
-      s.date ? new Date(s.date).toLocaleDateString('en-GB') : 'N/A',
-      s.referenceNo || s.transactionReference || 'N/A',
-      s.paymentMethod || 'Bank Transfer',
-      s.amount || 0,
-      s.commission || 0,
-      s.status || 'Completed',
-      s.processedBy || 'Administrator',
-      `"${(s.notes || '').replace(/"/g, '""')}"`
-    ]);
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `settlement_statement_${store.storeIdCode || store.id}_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   const handleProcessSettlement = async (e: React.FormEvent) => {
@@ -421,7 +439,7 @@ export const StoreViewModal: React.FC<StoreViewModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={handleDownloadStatement}
+                    onClick={() => handleDownloadStatement('csv')}
                     className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                   >
                     <Download className="w-3.5 h-3.5 text-slate-500" />
@@ -470,25 +488,25 @@ export const StoreViewModal: React.FC<StoreViewModalProps> = ({
                   <div className="bg-white border border-slate-200/80 rounded-2xl p-3 shadow-xs">
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Total Revenue</span>
                     <p className="text-base font-black text-slate-900 mt-1">
-                      ₹{(settlementSummary?.totalRevenue || store.revenueRaw || 45200).toLocaleString('en-IN')}
+                      ₹{(settlementSummary?.totalRevenue || store.revenueRaw || 0).toLocaleString('en-IN')}
                     </p>
                   </div>
                   <div className="bg-white border border-slate-200/80 rounded-2xl p-3 shadow-xs">
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Commission</span>
                     <p className="text-base font-black text-indigo-600 mt-1">
-                      ₹{(settlementSummary?.commission || store.commissionRaw || 4520).toLocaleString('en-IN')}
+                      ₹{(settlementSummary?.commission || store.commissionRaw || 0).toLocaleString('en-IN')}
                     </p>
                   </div>
                   <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-3 shadow-xs">
                     <span className="text-[10px] font-bold text-amber-700 uppercase">Pending Settlement</span>
                     <p className="text-base font-black text-amber-700 mt-1">
-                      ₹{(settlementSummary?.pendingSettlement ?? 12340).toLocaleString('en-IN')}
+                      ₹{(settlementSummary?.pendingSettlement ?? 0).toLocaleString('en-IN')}
                     </p>
                   </div>
                   <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-3 shadow-xs">
                     <span className="text-[10px] font-bold text-emerald-700 uppercase">Already Settled</span>
                     <p className="text-base font-black text-emerald-700 mt-1">
-                      ₹{(settlementSummary?.alreadySettled ?? 28340).toLocaleString('en-IN')}
+                      ₹{(settlementSummary?.alreadySettled ?? 0).toLocaleString('en-IN')}
                     </p>
                   </div>
                   <div className="bg-white border border-slate-200/80 rounded-2xl p-3 shadow-xs">

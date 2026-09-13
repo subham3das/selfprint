@@ -25,13 +25,12 @@ export class PaymentsController extends BaseController {
         return;
       }
 
-      // Generate order ID
       const orderId = `order_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
       const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_selfprint_live';
 
       this.sendSuccess(res, 'Razorpay order created successfully', {
         orderId,
-        amount: Math.round(Number(amount) * 100), // amount in paise for Razorpay
+        amount: Math.round(Number(amount) * 100),
         amountInRupees: Number(amount),
         currency,
         keyId,
@@ -153,7 +152,7 @@ export class PaymentsController extends BaseController {
         settlementStatus: 'PENDING'
       });
 
-      // 8. Broadcast to Store Queue and Admin in Real-Time via WebSockets
+      // 7. Broadcast to Store Queue and Admin in Real-Time via WebSockets
       try {
         const { socketManager } = await import('../../socket');
         const sId = String(storeObjId);
@@ -209,6 +208,89 @@ export class PaymentsController extends BaseController {
       next(error);
     }
   };
+
+  /**
+   * POST /api/v1/payments/razorpay/webhook
+   * Production webhook handler for Razorpay payment captures, refunds, and settlements
+   */
+  public handleRazorpayWebhook = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET;
+      const signature = req.headers['x-razorpay-signature'] as string;
+
+      if (webhookSecret && signature) {
+        const bodyStr = JSON.stringify(req.body);
+        const expectedSignature = crypto
+          .createHmac('sha256', webhookSecret)
+          .update(bodyStr)
+          .digest('hex');
+
+        if (expectedSignature !== signature) {
+          ApiResponse.error(res, 'Invalid webhook signature', HTTP_STATUS.BAD_REQUEST);
+          return;
+        }
+      }
+
+      const event = req.body?.event;
+      const payload = req.body?.payload;
+
+      if (event === 'payment.captured' || event === 'order.paid') {
+        const paymentEntity = payload?.payment?.entity;
+        const notes = paymentEntity?.notes || {};
+        const storeId = notes.storeId;
+        const jobId = notes.jobId;
+
+        if (storeId && mongoose.Types.ObjectId.isValid(storeId)) {
+          const amountInRupees = (paymentEntity.amount || 0) / 100;
+
+          try {
+            const { socketManager } = await import('../../socket');
+            socketManager.emitToStore(storeId, 'payment:updated', {
+              paymentId: paymentEntity.id,
+              storeId,
+              jobId,
+              amount: amountInRupees,
+              status: 'PAID',
+              timestamp: new Date().toISOString()
+            });
+            socketManager.emitToStore(storeId, 'settlement:updated', {
+              storeId,
+              event: 'PAYMENT_CAPTURED',
+              amount: amountInRupees,
+              timestamp: new Date().toISOString()
+            });
+          } catch (wsErr) {}
+        }
+      } else if (event === 'refund.processed') {
+        const refundEntity = payload?.refund?.entity;
+        const paymentEntity = payload?.payment?.entity;
+        const notes = paymentEntity?.notes || {};
+        const storeId = notes.storeId;
+
+        if (storeId) {
+          try {
+            const { socketManager } = await import('../../socket');
+            socketManager.emitToStore(storeId, 'payment:updated', {
+              type: 'REFUND',
+              storeId,
+              refundId: refundEntity?.id,
+              amount: (refundEntity?.amount || 0) / 100,
+              status: 'REFUNDED',
+              timestamp: new Date().toISOString()
+            });
+          } catch (wsErr) {}
+        }
+      }
+
+      this.sendSuccess(res, 'Webhook processed successfully', { received: true });
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
 export const paymentsController = new PaymentsController();
@@ -218,6 +300,8 @@ paymentsRouter.post('/create-order', paymentsController.createPaymentOrder);
 paymentsRouter.post('/razorpay/create-order', paymentsController.createPaymentOrder);
 paymentsRouter.post('/verify', paymentsController.verifyPayment);
 paymentsRouter.post('/razorpay/verify', paymentsController.verifyPayment);
+paymentsRouter.post('/webhook', paymentsController.handleRazorpayWebhook);
+paymentsRouter.post('/razorpay/webhook', paymentsController.handleRazorpayWebhook);
 
 export default paymentsRouter;
 export { paymentsRouter };
