@@ -72,8 +72,9 @@ export const useRevenue = () => {
         city: filters.city !== 'All Cities' ? filters.city : undefined,
         revenueType: filters.revenueType !== 'All Revenue Types' ? filters.revenueType : undefined
       }),
-    staleTime: 15000,
-    refetchInterval: 20000
+    staleTime: Infinity,
+    refetchInterval: false,
+    refetchOnWindowFocus: false
   });
 
   // Socket.io Real-Time Synchronization

@@ -39,7 +39,6 @@ export const usePrinterMonitoring = () => {
 
   const lastKnownStateRef = useRef<ConnectionState | null>(null);
   const recentNotifsRef = useRef<Map<string, number>>(new Map());
-  const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const addNotification = useCallback(
     (item: Omit<PrinterNotificationItem, 'id' | 'timestamp'>) => {
@@ -183,14 +182,9 @@ export const usePrinterMonitoring = () => {
     }
   }, [addNotification]);
 
-  // Initial check and periodic polling (every 5s to Backend only)
+  // Initial check (NO interval polling - 100% real-time event driven)
   useEffect(() => {
     checkConnectorStatus();
-    checkTimerRef.current = setInterval(checkConnectorStatus, 5000);
-
-    return () => {
-      if (checkTimerRef.current) clearInterval(checkTimerRef.current);
-    };
   }, [checkConnectorStatus]);
 
   // Realtime Socket.IO Listeners

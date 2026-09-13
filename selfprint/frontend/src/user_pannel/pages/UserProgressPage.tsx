@@ -1,3 +1,4 @@
+import { getSocket } from '@/lib/socket';
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { Printer, Clock } from 'lucide-react';
@@ -66,11 +67,42 @@ export const UserProgressPage: React.FC = () => {
     };
 
     pollJob();
-    const interval = setInterval(pollJob, 2500);
+
+    try {
+      const socket = getSocket();
+      if (socket && targetJobId) {
+        socket.emit('join_job', targetJobId);
+
+        const handleJobUpdate = (data: any) => {
+          console.log('[Progress] Live update received from socket:', data);
+          if (isMounted) {
+            if (data?.job) setLiveJob(data.job);
+            if (data?.status) setLiveJob((prev: any) => ({ ...prev, status: data.status }));
+            if (data?.queue) setLiveQueue(data.queue);
+          }
+        };
+
+        socket.on('queue:started', handleJobUpdate);
+        socket.on('queue:completed', handleJobUpdate);
+        socket.on('queue:failed', handleJobUpdate);
+        socket.on('queue:cancelled', handleJobUpdate);
+        socket.on('queue:status', handleJobUpdate);
+        socket.on('PRINT_JOB_STATUS_CHANGED', handleJobUpdate);
+
+        return () => {
+          isMounted = false;
+          socket.off('queue:started', handleJobUpdate);
+          socket.off('queue:completed', handleJobUpdate);
+          socket.off('queue:failed', handleJobUpdate);
+          socket.off('queue:cancelled', handleJobUpdate);
+          socket.off('queue:status', handleJobUpdate);
+          socket.off('PRINT_JOB_STATUS_CHANGED', handleJobUpdate);
+        };
+      }
+    } catch {}
 
     return () => {
       isMounted = false;
-      clearInterval(interval);
     };
   }, [targetJobId]);
 

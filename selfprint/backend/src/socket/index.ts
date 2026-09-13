@@ -10,7 +10,6 @@ class SocketManager {
     this.io = new SocketIOServer(httpServer, {
       cors: {
         origin: (origin, callback) => {
-          // Allow all origins with credentials support
           callback(null, true);
         },
         methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
@@ -22,7 +21,7 @@ class SocketManager {
     });
 
     this.io.on('connection', (socket: Socket) => {
-      logger.info(`🔌 Socket connected: ${socket.id}`);
+      logger.info(`[Socket] 🔌 Client connected: ${socket.id}`);
 
       const auth = socket.handshake.auth || {};
       if (auth.connectorId) {
@@ -34,29 +33,25 @@ class SocketManager {
         socket.join(`store:${auth.storeId}`);
       }
 
-      // Admin Room Subscription
       socket.on('join_admin', () => {
         socket.join('admin');
-        logger.info(`🛡️ Socket ${socket.id} joined admin room`);
+        logger.info(`[Socket] 🛡️ Socket ${socket.id} joined admin room`);
       });
 
-      // Store Room Subscription
       socket.on('join_store', (storeId: string) => {
         if (storeId) {
           socket.join(`store:${storeId}`);
-          logger.info(`🏪 Socket ${socket.id} joined store:${storeId}`);
+          logger.info(`[Socket] 🏪 Socket ${socket.id} joined store:${storeId}`);
         }
       });
 
-      // Customer Job Tracking Subscription
       socket.on('join_job', (jobId: string) => {
         if (jobId) {
           socket.join(`job:${jobId}`);
-          logger.info(`📄 Socket ${socket.id} joined job:${jobId}`);
+          logger.info(`[Socket] 📄 Socket ${socket.id} joined job:${jobId}`);
         }
       });
 
-      // Desktop Connector Registration
       socket.on('register_connector', async (data: { connectorId: string; machineId?: string; storeId?: string }) => {
         (socket as any).connectorId = data.connectorId;
         (socket as any).storeId = data.storeId;
@@ -64,7 +59,7 @@ class SocketManager {
         if (data.storeId) {
           socket.join(`store:${data.storeId}`);
         }
-        logger.info(`🖨️ Connector registered on socket ${socket.id}: ${data.connectorId}`);
+        logger.info(`[Socket] 🖨️ Connector registered on socket ${socket.id}: ${data.connectorId}`);
 
         try {
           const { connectorRegistry } = await import('../modules/connector/connector.service');
@@ -76,24 +71,23 @@ class SocketManager {
             version: '1.0.0'
           });
         } catch (err) {
-          logger.warn('Failed to register in connectorRegistry:', err);
+          logger.warn('[Socket] Failed to register in connectorRegistry:', err);
         }
 
-        this.emitToStore(data.storeId || 'default', 'connector_status', {
-          status: 'Connected',
-          state: 'CONNECTED',
+        const payload = {
           connectorId: data.connectorId,
-          timestamp: new Date().toISOString()
-        });
-        this.emitToStore(data.storeId || 'default', 'connector_connected', {
-          connectorId: data.connectorId,
+          storeId: data.storeId || 'default',
           status: 'ONLINE',
           state: 'CONNECTED',
+          socketConnected: true,
           timestamp: new Date().toISOString()
-        });
+        };
+
+        this.emitToStore(data.storeId || 'default', 'connector:connected', payload);
+        this.emitToStore(data.storeId || 'default', 'connector_connected', payload);
+        this.emitToStore(data.storeId || 'default', 'connector_status', { ...payload, status: 'Connected' });
       });
 
-      // Inbound: connector_online
       socket.on('connector_online', async (data: any) => {
         const connectorId = data.connectorId;
         const storeId = data.storeId || (socket as any).storeId;
@@ -104,7 +98,6 @@ class SocketManager {
           socket.join(`store:${storeId}`);
         }
 
-        // Immediately update MongoDB ConnectorModel so web dashboard reflects ONLINE state
         try {
           const { ConnectorModel } = await import('../models/connector.model');
           const mongoose = await import('mongoose');
@@ -130,9 +123,9 @@ class SocketManager {
             { $set: updateFields },
             { new: true }
           );
-          logger.info(`[Status updated in MongoDB] Connector ${connectorId} marked ONLINE via socket`);
+          logger.info(`[Socket] Connector ${connectorId} marked ONLINE in DB`);
         } catch (dbErr) {
-          logger.warn('Failed to update ConnectorModel on connector_online:', dbErr);
+          logger.warn('[Socket] Failed to update ConnectorModel on connector_online:', dbErr);
         }
 
         try {
@@ -145,30 +138,38 @@ class SocketManager {
             version: data.version || '1.0.0'
           });
         } catch (e) {
-          logger.warn('Error in connector_online registration:', e);
+          logger.warn('[Socket] Error in connector_online registration:', e);
         }
 
         const targetStore = storeId || 'default';
-        this.emitToStore(targetStore, 'connector_connected', {
+        const connPayload = {
           connectorId: data.connectorId,
           storeId: targetStore,
           status: 'ONLINE',
           state: 'CONNECTED',
+          socketConnected: true,
           timestamp: new Date().toISOString()
-        });
+        };
+        this.emitToStore(targetStore, 'connector:connected', connPayload);
+        this.emitToStore(targetStore, 'connector_connected', connPayload);
       });
 
-      // Inbound: connector_offline
       socket.on('connector_offline', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
-        this.emitToStore(storeId, 'connector_disconnected', {
-          connectorId: data?.connectorId || (socket as any).connectorId,
+        const connectorId = data?.connectorId || (socket as any).connectorId;
+        const offPayload = {
+          connectorId,
+          storeId,
+          status: 'OFFLINE',
+          state: 'OFFLINE',
+          socketConnected: false,
           reason: data?.reason || 'Connector stopped',
           timestamp: new Date().toISOString()
-        });
+        };
+        this.emitToStore(storeId, 'connector:disconnected', offPayload);
+        this.emitToStore(storeId, 'connector_disconnected', offPayload);
       });
 
-      // Inbound: heartbeat
       socket.on('heartbeat', async (data: any) => {
         const connectorId = data?.connectorId || (socket as any).connectorId;
         const storeId = data?.storeId || (socket as any).storeId;
@@ -200,10 +201,9 @@ class SocketManager {
             { $set: updateObj },
             { new: true }
           );
-          logger.info(`[Status updated in MongoDB] Connector ${connectorId} heartbeat updated via socket (state: ${updateObj.state}, auth: ${updateObj.authenticated})`);
 
           const targetStoreId = storeId || updatedConnector?.storeId?.toString() || 'default';
-          this.emitToStore(targetStoreId, 'heartbeat', {
+          const hbPayload = {
             connectorId,
             storeId: targetStoreId,
             status: 'ONLINE',
@@ -214,38 +214,53 @@ class SocketManager {
             hostRunning: updateObj.hostRunning,
             printerCount: count,
             printersCount: count,
+            physicalPrinterCount: count,
             lastHeartbeat: updateObj.lastHeartbeat,
             health: data?.health || data?.telemetry,
             timestamp: data?.timestamp || new Date().toISOString()
-          });
+          };
+
+          this.emitToStore(targetStoreId, 'connector:heartbeat', hbPayload);
+          this.emitToStore(targetStoreId, 'heartbeat', hbPayload);
 
           if (Array.isArray(data?.printers) && data.printers.length > 0) {
-            this.emitToStore(targetStoreId, 'printers_updated', {
+            const pPayload = {
               connectorId,
+              storeId: targetStoreId,
               printers: data.printers,
               count: data.printers.length,
               timestamp: new Date().toISOString()
-            });
+            };
+            this.emitToStore(targetStoreId, 'printer:updated', pPayload);
+            this.emitToStore(targetStoreId, 'printers_updated', pPayload);
           }
         } catch (err) {
-          logger.warn('Error handling socket heartbeat:', err);
+          logger.warn('[Socket] Error handling socket heartbeat:', err);
         }
       });
 
-      // Desktop Connector Printer Sync Event
       socket.on('printer_sync', async (payload: { connectorId: string; machineId: string; printers: any[]; storeId?: string }) => {
         try {
-          const storeId = payload.storeId || (socket as any).storeId;
+          const storeId = payload.storeId || (socket as any).storeId || 'default';
           const { printerService } = await import('../modules/printer/printer.service');
           await printerService.syncPrinters(storeId, payload.connectorId, payload.machineId, payload.printers);
           const { connectorRegistry } = await import('../modules/connector/connector.service');
           await connectorRegistry.updatePrinters(payload.connectorId, payload.printers);
+
+          const pPayload = {
+            connectorId: payload.connectorId,
+            storeId,
+            printers: payload.printers,
+            count: payload.printers?.length || 0,
+            timestamp: new Date().toISOString()
+          };
+          this.emitToStore(storeId, 'printer:updated', pPayload);
+          this.emitToStore(storeId, 'printers_updated', pPayload);
         } catch (err) {
-          logger.error('Failed to handle printer_sync socket event:', err);
+          logger.error('[Socket] Failed to handle printer_sync socket event:', err);
         }
       });
 
-      // Inbound: scan_started
       socket.on('scan_started', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
         this.emitToStore(storeId, 'hardware_scan_started', {
@@ -254,7 +269,6 @@ class SocketManager {
         });
       });
 
-      // Inbound: scan_completed / hardware_ready
       const handleScanCompleted = async (payload: any) => {
         const storeId = payload.storeId || (socket as any).storeId || 'default';
         if (payload.printers && Array.isArray(payload.printers)) {
@@ -264,29 +278,37 @@ class SocketManager {
             const { connectorRegistry } = await import('../modules/connector/connector.service');
             await connectorRegistry.updatePrinters(payload.connectorId, payload.printers);
           } catch (err) {
-            logger.error('Failed to sync printers on scan_completed:', err);
+            logger.error('[Socket] Failed to sync printers on scan_completed:', err);
           }
         }
-        this.emitToStore(storeId, 'hardware_scan_completed', {
+        const pPayload = {
           connectorId: payload.connectorId,
+          storeId,
+          printers: payload.printers || [],
           count: payload.printers?.length || 0,
           timestamp: new Date().toISOString()
-        });
-        this.emitToStore(storeId, 'printers_updated', {
-          connectorId: payload.connectorId,
-          printers: payload.printers,
-          timestamp: new Date().toISOString()
-        });
+        };
+        this.emitToStore(storeId, 'printer:updated', pPayload);
+        this.emitToStore(storeId, 'printers_updated', pPayload);
+        this.emitToStore(storeId, 'hardware_scan_completed', pPayload);
       };
       socket.on('scan_completed', handleScanCompleted);
       socket.on('hardware_ready', handleScanCompleted);
 
-      // Inbound: printer_added
       socket.on('printer_added', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
-        this.emitToStore(storeId, 'printer_status_changed', {
+        const addPayload = {
           type: 'ADDED',
           printer: data?.printer,
+          timestamp: new Date().toISOString()
+        };
+        this.emitToStore(storeId, 'printer:added', addPayload);
+        this.emitToStore(storeId, 'printer:status', { ...addPayload, status: 'ONLINE' });
+        this.emitToStore(storeId, 'printer_status_changed', addPayload);
+        this.emitToStore(storeId, 'notification:new', {
+          type: 'success',
+          title: 'Printer Connected',
+          message: `Printer ${data?.printer?.name || 'Device'} is now online.`,
           timestamp: new Date().toISOString()
         });
         this.emitToStore(storeId, 'notification', {
@@ -302,12 +324,20 @@ class SocketManager {
         });
       });
 
-      // Inbound: printer_removed
       socket.on('printer_removed', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
-        this.emitToStore(storeId, 'printer_status_changed', {
+        const remPayload = {
           type: 'REMOVED',
           printerName: data?.printerName,
+          timestamp: new Date().toISOString()
+        };
+        this.emitToStore(storeId, 'printer:removed', remPayload);
+        this.emitToStore(storeId, 'printer:status', { ...remPayload, status: 'OFFLINE' });
+        this.emitToStore(storeId, 'printer_status_changed', remPayload);
+        this.emitToStore(storeId, 'notification:new', {
+          type: 'warning',
+          title: 'Printer Offline',
+          message: `Printer ${data?.printerName || 'Device'} was disconnected.`,
           timestamp: new Date().toISOString()
         });
         this.emitToStore(storeId, 'notification', {
@@ -318,50 +348,53 @@ class SocketManager {
         });
       });
 
-      // Inbound: printer_updated
       socket.on('printer_updated', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
+        this.emitToStore(storeId, 'printer:updated', data);
         this.emitToStore(storeId, 'printers_updated', data);
       });
 
-      // Inbound: paper_low / paper_empty
       socket.on('paper_low', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
-        this.emitToStore(storeId, 'notification', {
+        const notif = {
           type: 'warning',
           title: 'Paper Low',
           message: `Printer ${data?.printerName || ''} paper level is low.`,
           timestamp: new Date().toISOString()
-        });
+        };
+        this.emitToStore(storeId, 'notification:new', notif);
+        this.emitToStore(storeId, 'notification', notif);
       });
       socket.on('paper_empty', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
-        this.emitToStore(storeId, 'notification', {
+        const notif = {
           type: 'error',
           title: 'Paper Empty',
           message: `Printer ${data?.printerName || ''} is out of paper.`,
           timestamp: new Date().toISOString()
-        });
+        };
+        this.emitToStore(storeId, 'notification:new', notif);
+        this.emitToStore(storeId, 'notification', notif);
       });
 
-      // Inbound: toner_low
       socket.on('toner_low', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
-        this.emitToStore(storeId, 'notification', {
+        const notif = {
           type: 'warning',
           title: 'Toner Low',
           message: `Printer ${data?.printerName || ''} toner is low.`,
           timestamp: new Date().toISOString()
-        });
+        };
+        this.emitToStore(storeId, 'notification:new', notif);
+        this.emitToStore(storeId, 'notification', notif);
       });
 
-      // Inbound: queue_changed
       socket.on('queue_changed', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
+        this.emitToStore(storeId, 'queue:status', data);
         this.emitToStore(storeId, 'queue_changed', data);
       });
 
-      // Inbound: host_restart
       socket.on('host_restart', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
         this.emitToStore(storeId, 'connector_reconnecting', {
@@ -371,23 +404,26 @@ class SocketManager {
         });
       });
 
-      // Inbound: internet_lost / internet_restored
       socket.on('internet_lost', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
-        this.emitToStore(storeId, 'connector_disconnected', {
+        const dPayload = {
           reason: 'Internet Lost',
+          status: 'OFFLINE',
           timestamp: new Date().toISOString()
-        });
+        };
+        this.emitToStore(storeId, 'connector:disconnected', dPayload);
+        this.emitToStore(storeId, 'connector_disconnected', dPayload);
       });
       socket.on('internet_restored', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
-        this.emitToStore(storeId, 'connector_connected', {
+        const cPayload = {
           status: 'ONLINE',
           timestamp: new Date().toISOString()
-        });
+        };
+        this.emitToStore(storeId, 'connector:connected', cPayload);
+        this.emitToStore(storeId, 'connector_connected', cPayload);
       });
 
-      // Inbound: command_ack
       socket.on('command_ack', (data: any) => {
         const storeId = data?.storeId || (socket as any).storeId || 'default';
         this.emitToStore(storeId, 'command_result', {
@@ -399,50 +435,51 @@ class SocketManager {
         });
       });
 
-      // Connector Status Change
       socket.on('connector_status', (data: { status: string; state?: string; connectorId?: string; storeId?: string }) => {
         const storeId = data.storeId || (socket as any).storeId || 'default';
-        this.emitToStore(storeId, 'connector_status', {
+        const payload = {
           ...data,
           connectorId: data.connectorId || (socket as any).connectorId,
           timestamp: new Date().toISOString()
-        });
+        };
+        this.emitToStore(storeId, 'connector:updated', payload);
+        this.emitToStore(storeId, 'connector_status', payload);
       });
 
-      // Bidirectional Printer Notification Event
       socket.on('printer_notification', (data: { type: string; title: string; message: string; storeId?: string }) => {
         const storeId = data.storeId || (socket as any).storeId || 'default';
-        this.emitToStore(storeId, 'printer_notification', {
+        const notif = {
           ...data,
           timestamp: new Date().toISOString()
-        });
+        };
+        this.emitToStore(storeId, 'notification:new', notif);
+        this.emitToStore(storeId, 'printer_notification', notif);
       });
 
       socket.on('disconnect', (reason) => {
         const connectorId = (socket as any).connectorId;
         const storeId = (socket as any).storeId;
-        logger.info(`🔌 Socket transport disconnected: ${socket.id} (connector: ${connectorId || 'none'}, store: ${storeId || 'none'}, reason: ${reason})`);
-        // Note: Do not immediately mark connector OFFLINE or broadcast connector_disconnected here.
-        // Transport drops can be temporary (reconnects, upgrades, network blips).
-        // Authoritative offline status is handled by connector.service heartbeat liveness checker (35s grace).
+        logger.info(`[Socket] 🔌 Client disconnected: ${socket.id} (connector: ${connectorId || 'none'}, store: ${storeId || 'none'}, reason: ${reason})`);
       });
     });
 
     this.isInitialized = true;
-    logger.info('🚀 WebSocket & Socket.io server initialized successfully');
+    logger.info('[Socket] 🚀 WebSocket & Socket.io server initialized successfully');
     return this.io;
   }
 
   public emitToStore(storeId: string, event: string, data: any): void {
     if (this.io) {
+      logger.info(`[Socket] 📡 Emitting event "${event}" to store:${storeId} and admin`);
       this.io.to(`store:${storeId}`).emit(event, data);
       this.io.to('admin').emit(event, data);
-      this.io.emit(event, data); // Global broadcast fallback
+      this.io.emit(event, data);
     }
   }
 
   public emitToJob(jobId: string, event: string, data: any): void {
     if (this.io) {
+      logger.info(`[Socket] 📄 Emitting event "${event}" to job:${jobId}`);
       this.io.to(`job:${jobId}`).emit(event, data);
       this.io.to('admin').emit(event, data);
     }

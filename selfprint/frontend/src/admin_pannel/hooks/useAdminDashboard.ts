@@ -11,7 +11,7 @@ import {
   SystemAlertItem,
   RecentUserItem
 } from '../types/admin.types';
-import { getSocket } from '@/lib/socket';
+import { getSocket, joinAdminRoom } from '@/lib/socket';
 
 const defaultRevenue: RevenueOverviewData = {
   totalRevenue: '₹0',
@@ -36,7 +36,7 @@ export const useAdminDashboard = () => {
   const [isNotificationOpen, setIsNotificationOpen] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
 
-  // 1. Unified Dashboard Overview Query
+  // 1. Initial Dashboard Overview Fetch (NO POLLING - 100% Event Driven)
   const {
     data: overviewData,
     isLoading,
@@ -46,33 +46,81 @@ export const useAdminDashboard = () => {
   } = useQuery({
     queryKey: ['admin-dashboard-overview', revenuePeriod, analyticsPeriod],
     queryFn: () => adminDashboardService.fetchOverview(revenuePeriod, analyticsPeriod),
-    staleTime: 10000,
-    refetchInterval: 15000 // auto poll every 15s
+    staleTime: Infinity,
+    refetchOnWindowFocus: false
   });
 
-  // Real-time socket events invalidation
+  // 2. Real-time Socket.IO event listeners
   useEffect(() => {
     try {
       const socket = getSocket();
       if (!socket) return;
 
-      const handleLiveUpdate = () => {
+      joinAdminRoom();
+
+      const handleSocketUpdate = (eventName: string, data?: any) => {
+        console.log(`[Dashboard] state updated from socket: ${eventName}`, data);
         queryClient.invalidateQueries({ queryKey: ['admin-dashboard-overview'] });
       };
 
-      socket.on('NEW_PRINT_JOB', handleLiveUpdate);
-      socket.on('PRINT_JOB_STATUS_CHANGED', handleLiveUpdate);
-      socket.on('TRANSACTION_SUCCESS', handleLiveUpdate);
-      socket.on('PRINTER_STATUS_CHANGED', handleLiveUpdate);
+      const onQueueCreated = (d: any) => handleSocketUpdate('queue:created', d);
+      const onQueueStarted = (d: any) => handleSocketUpdate('queue:started', d);
+      const onQueueCompleted = (d: any) => handleSocketUpdate('queue:completed', d);
+      const onQueueFailed = (d: any) => handleSocketUpdate('queue:failed', d);
+      const onQueueCancelled = (d: any) => handleSocketUpdate('queue:cancelled', d);
+      const onConnectorConnected = (d: any) => handleSocketUpdate('connector:connected', d);
+      const onConnectorDisconnected = (d: any) => handleSocketUpdate('connector:disconnected', d);
+      const onConnectorHeartbeat = (d: any) => handleSocketUpdate('connector:heartbeat', d);
+      const onPrinterUpdated = (d: any) => handleSocketUpdate('printer:updated', d);
+      const onStoreUpdated = (d: any) => handleSocketUpdate('store:updated', d);
+      const onPaymentUpdated = (d: any) => handleSocketUpdate('payment:updated', d);
+      const onSettlementCreated = (d: any) => handleSocketUpdate('settlement:created', d);
+
+      // Structured events
+      socket.on('queue:created', onQueueCreated);
+      socket.on('queue:started', onQueueStarted);
+      socket.on('queue:completed', onQueueCompleted);
+      socket.on('queue:failed', onQueueFailed);
+      socket.on('queue:cancelled', onQueueCancelled);
+      socket.on('connector:connected', onConnectorConnected);
+      socket.on('connector:disconnected', onConnectorDisconnected);
+      socket.on('connector:heartbeat', onConnectorHeartbeat);
+      socket.on('printer:updated', onPrinterUpdated);
+      socket.on('store:updated', onStoreUpdated);
+      socket.on('store:block', onStoreUpdated);
+      socket.on('store:unblock', onStoreUpdated);
+      socket.on('payment:updated', onPaymentUpdated);
+      socket.on('settlement:created', onSettlementCreated);
+
+      // Legacy compatibility
+      socket.on('NEW_PRINT_JOB', onQueueCreated);
+      socket.on('PRINT_JOB_STATUS_CHANGED', onQueueCompleted);
+      socket.on('TRANSACTION_SUCCESS', onPaymentUpdated);
+      socket.on('PRINTER_STATUS_CHANGED', onPrinterUpdated);
 
       return () => {
-        socket.off('NEW_PRINT_JOB', handleLiveUpdate);
-        socket.off('PRINT_JOB_STATUS_CHANGED', handleLiveUpdate);
-        socket.off('TRANSACTION_SUCCESS', handleLiveUpdate);
-        socket.off('PRINTER_STATUS_CHANGED', handleLiveUpdate);
+        socket.off('queue:created', onQueueCreated);
+        socket.off('queue:started', onQueueStarted);
+        socket.off('queue:completed', onQueueCompleted);
+        socket.off('queue:failed', onQueueFailed);
+        socket.off('queue:cancelled', onQueueCancelled);
+        socket.off('connector:connected', onConnectorConnected);
+        socket.off('connector:disconnected', onConnectorDisconnected);
+        socket.off('connector:heartbeat', onConnectorHeartbeat);
+        socket.off('printer:updated', onPrinterUpdated);
+        socket.off('store:updated', onStoreUpdated);
+        socket.off('store:block', onStoreUpdated);
+        socket.off('store:unblock', onStoreUpdated);
+        socket.off('payment:updated', onPaymentUpdated);
+        socket.off('settlement:created', onSettlementCreated);
+
+        socket.off('NEW_PRINT_JOB', onQueueCreated);
+        socket.off('PRINT_JOB_STATUS_CHANGED', onQueueCompleted);
+        socket.off('TRANSACTION_SUCCESS', onPaymentUpdated);
+        socket.off('PRINTER_STATUS_CHANGED', onPrinterUpdated);
       };
     } catch {
-      // socket not connected yet, polling handles it
+      // socket init handled
     }
   }, [queryClient]);
 
@@ -112,3 +160,5 @@ export const useAdminDashboard = () => {
     recentUsers
   };
 };
+
+export default useAdminDashboard;

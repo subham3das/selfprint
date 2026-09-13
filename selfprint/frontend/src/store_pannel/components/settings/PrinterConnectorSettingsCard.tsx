@@ -135,9 +135,9 @@ export const PrinterConnectorSettingsCard: React.FC = () => {
       if (info) setInstallerInfo(info);
     }).catch(() => {});
 
-    const interval = setInterval(fetchStatus, 5000);
+    // Real-time event driven (polling interval removed)
     return () => {
-      clearInterval(interval);
+      
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     };
   }, [fetchStatus, handleGenerateCode]);
@@ -153,6 +153,13 @@ export const PrinterConnectorSettingsCard: React.FC = () => {
     const handlePrintersUpdated = () => fetchStatus();
     const handlePaired = () => fetchStatus();
 
+    socket.on('connector:connected', handleConnected);
+    socket.on('connector:disconnected', handleDisconnected);
+    socket.on('connector:heartbeat', handleHeartbeat);
+    socket.on('connector:updated', handleConnected);
+    socket.on('connector:paired', handlePaired);
+    socket.on('connector:unpaired', handleDisconnected);
+    socket.on('printer:updated', handlePrintersUpdated);
     socket.on('connector_connected', handleConnected);
     socket.on('connector_disconnected', handleDisconnected);
     socket.on('connector_authenticated', handleConnected);

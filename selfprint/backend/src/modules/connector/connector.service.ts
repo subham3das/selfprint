@@ -29,6 +29,7 @@ class ConnectorRegistryService {
 
           logger.warn(`⏰ Connector ${conn.connectorId} (store: ${conn.storeId}) marked OFFLINE due to heartbeat timeout (>35s)`);
 
+          socketManager.emitToStore(conn.storeId.toString(), 'connector:disconnected', { connectorId: conn.connectorId, storeId: conn.storeId.toString(), reason: 'Heartbeat timeout (>35s)', timestamp: new Date().toISOString() });
           socketManager.emitToStore(conn.storeId.toString(), 'connector_disconnected', {
             connectorId: conn.connectorId,
             storeId: conn.storeId.toString(),
@@ -103,6 +104,7 @@ class ConnectorRegistryService {
     }
 
     // Broadcast to Store Dashboard & Admin
+    socketManager.emitToStore(record.storeId, 'connector:connected', { connectorId: record.connectorId, storeId: record.storeId, hostname: record.hostname, status: 'ONLINE', state: 'CONNECTED', timestamp: new Date().toISOString() });
     socketManager.emitToStore(record.storeId, 'connector_connected', {
       connectorId: record.connectorId,
       storeId: record.storeId,
@@ -177,6 +179,7 @@ class ConnectorRegistryService {
       record.state = 'READY';
       record.lastSeen = new Date();
 
+      socketManager.emitToStore(record.storeId, 'printer:updated', { connectorId, printers, count: printers.length, timestamp: new Date().toISOString() });
       socketManager.emitToStore(record.storeId, 'printers_updated', {
         connectorId,
         printers,

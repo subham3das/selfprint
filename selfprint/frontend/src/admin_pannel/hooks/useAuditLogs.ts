@@ -7,7 +7,6 @@ import {
   AuditStatsData,
   LoginLocationPoint,
   UserActivityRankItem,
-  AutoRefreshInterval
 } from '../types/audit.types';
 import { adminAuditLogsService } from '../services/auditLogs.service';
 import { getSocket } from '@/lib/socket';
@@ -27,19 +26,6 @@ const defaultStats: AuditStatsData = {
   securityAlertsTrend: '—'
 };
 
-const getPollingInterval = (interval: AutoRefreshInterval): number | false => {
-  switch (interval) {
-    case '30s':
-      return 30000;
-    case '1m':
-      return 60000;
-    case '5m':
-      return 300000;
-    case 'off':
-    default:
-      return false;
-  }
-};
 
 export const useAuditLogs = () => {
   const queryClient = useQueryClient();
@@ -75,7 +61,7 @@ export const useAuditLogs = () => {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const refetchInterval = getPollingInterval(filters.autoRefresh);
+  const refetchInterval: false = false;
 
   // 1. Fetch Stats
   const {
@@ -86,7 +72,7 @@ export const useAuditLogs = () => {
     queryKey: ['admin-audit-stats'],
     queryFn: () => adminAuditLogsService.fetchStats(),
     refetchInterval,
-    staleTime: 10000
+    staleTime: Infinity, refetchOnWindowFocus: false
   });
 
   // 2. Fetch Dynamic Filter Dropdown Options
@@ -175,7 +161,7 @@ export const useAuditLogs = () => {
   } = useQuery({
     queryKey: ['admin-audit-live-feed'],
     queryFn: () => adminAuditLogsService.fetchLiveFeed(),
-    refetchInterval: 10000,
+    refetchInterval: false,
     staleTime: 5000
   });
 

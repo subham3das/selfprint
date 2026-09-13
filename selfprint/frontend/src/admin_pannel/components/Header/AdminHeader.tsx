@@ -300,8 +300,9 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
         ];
       }
     },
-    staleTime: 30000,
-    refetchInterval: 30000
+    staleTime: Infinity,
+    refetchInterval: false,
+    refetchOnWindowFocus: false
   });
 
   const [notifsList, setNotifsList] = useState<NotificationItem[]>([]);

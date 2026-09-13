@@ -1051,6 +1051,23 @@ export class AdminStoresService {
       logger.warn("[AdminStoresService] Audit log error on settlement create:", auditErr);
     }
 
+        try {
+      const { socketManager } = await import('../../../socket');
+      socketManager.emitToStore(storeId, 'settlement:created', {
+        settlementId: settlement._id.toString(),
+        storeId,
+        amount: amountNum,
+        transactionReference: data.transactionReference.trim(),
+        timestamp: new Date().toISOString()
+      });
+      socketManager.emitToStore(storeId, 'payment:updated', {
+        type: 'SETTLEMENT',
+        storeId,
+        amount: amountNum,
+        timestamp: new Date().toISOString()
+      });
+    } catch (wsErr) {}
+
     return {
       id: settlement._id.toString(),
       storeId: settlement.storeId.toString(),

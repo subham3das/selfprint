@@ -2,6 +2,8 @@ import { io, Socket } from 'socket.io-client';
 import { SOCKET_URL } from '@/config/api';
 
 let socket: Socket | null = null;
+let activeStoreId: string | null = null;
+let activeJobId: string | null = null;
 
 export const getSocket = (): Socket => {
   if (!socket) {
@@ -26,19 +28,50 @@ export const getSocket = (): Socket => {
     });
 
     socket.on('connect', () => {
-      // Auto-join admin room if admin token exists
+      console.log('[Socket] Connected to backend real-time server:', socket?.id);
+      
       const adminToken = localStorage.getItem('selfprint_admin_token');
       if (adminToken && socket) {
         socket.emit('join_admin');
       }
+      if (activeStoreId && socket) {
+        socket.emit('join_store', activeStoreId);
+      }
+      if (activeJobId && socket) {
+        socket.emit('join_job', activeJobId);
+      }
     });
 
     socket.on('connect_error', (err) => {
-      // Silent retry
-      console.debug('Socket connection retry...', err.message);
+      console.debug('[Socket] Connection retry...', err.message);
     });
   }
   return socket;
+};
+
+export const joinAdminRoom = () => {
+  const s = getSocket();
+  if (s) {
+    s.emit('join_admin');
+  }
+};
+
+export const joinStoreRoom = (storeId: string) => {
+  if (!storeId) return;
+  activeStoreId = storeId;
+  const s = getSocket();
+  if (s) {
+    s.emit('join_store', storeId);
+  }
+};
+
+export const joinJobRoom = (jobId: string) => {
+  if (!jobId) return;
+  activeJobId = jobId;
+  const s = getSocket();
+  if (s) {
+    s.emit('join_job', jobId);
+  }
 };
 
 export default getSocket;

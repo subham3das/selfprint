@@ -216,6 +216,44 @@ export class OrdersController extends BaseController {
         return;
       }
 
+            // Real-time Socket.IO Broadcast
+      try {
+        const { socketManager } = await import('../../socket');
+        const sId = String(updated.storeId || storeId || 'default');
+        const jId = String(updated._id);
+        const normalizedStatus = String(status).toUpperCase();
+
+        const statusPayload = {
+          jobId: jId,
+          jobNumber: updated.jobNumber,
+          storeId: sId,
+          status,
+          job: updated,
+          timestamp: new Date().toISOString()
+        };
+
+        if (normalizedStatus === 'PRINTING') {
+          socketManager.emitToStore(sId, 'queue:started', statusPayload);
+          socketManager.emitToJob(jId, 'queue:started', statusPayload);
+        } else if (normalizedStatus === 'COMPLETED') {
+          socketManager.emitToStore(sId, 'queue:completed', statusPayload);
+          socketManager.emitToJob(jId, 'queue:completed', statusPayload);
+        } else if (normalizedStatus === 'FAILED' || normalizedStatus === 'ERROR') {
+          socketManager.emitToStore(sId, 'queue:failed', statusPayload);
+          socketManager.emitToJob(jId, 'queue:failed', statusPayload);
+        } else if (normalizedStatus === 'CANCELLED') {
+          socketManager.emitToStore(sId, 'queue:cancelled', statusPayload);
+          socketManager.emitToJob(jId, 'queue:cancelled', statusPayload);
+        }
+
+        socketManager.emitToStore(sId, 'queue:status', statusPayload);
+        socketManager.emitToJob(jId, 'queue:status', statusPayload);
+        socketManager.emitToStore(sId, 'queue_changed', { storeId: sId, action: 'STATUS_UPDATED', jobId: jId });
+        socketManager.emitToStore(sId, 'PRINT_JOB_STATUS_CHANGED', { jobId: jId, status });
+      } catch (wsErr) {
+        // silent fail
+      }
+
       this.sendSuccess(res, `Job status updated to ${status}`, { job: updated });
     } catch (error) {
       next(error);

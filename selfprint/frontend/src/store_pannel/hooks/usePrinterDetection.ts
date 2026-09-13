@@ -231,6 +231,13 @@ export const usePrinterDetection = (options?: {
       refreshConnectorStatus();
     };
 
+    socket.on('connector:connected', handleConnected);
+    socket.on('connector:disconnected', handleDisconnected);
+    socket.on('connector:heartbeat', handleHeartbeat);
+    socket.on('connector:updated', handleConnected);
+    socket.on('connector:paired', handlePaired);
+    socket.on('connector:unpaired', handleUnpaired);
+    socket.on('printer:updated', handlePrintersUpdated);
     socket.on('connector_connected', handleConnected);
     socket.on('connector_disconnected', handleDisconnected);
     socket.on('connector_authenticated', handleConnected);
@@ -253,9 +260,9 @@ export const usePrinterDetection = (options?: {
   // Initial load and periodic status polling
   useEffect(() => {
     refreshConnectorStatus();
-    const interval = setInterval(refreshConnectorStatus, 6000);
+    // Real-time event driven (interval removed)
     return () => {
-      clearInterval(interval);
+      
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
       if (scanTimerRef.current) clearInterval(scanTimerRef.current);
       if (messageTimerRef.current) clearInterval(messageTimerRef.current);
@@ -338,13 +345,13 @@ export const usePrinterDetection = (options?: {
     setCalibrationStepIndex(0);
 
     let step = 0;
-    const interval = setInterval(() => {
+    const calInterval = setInterval(() => {
       step += 1;
       setCalibrationStepIndex(step);
       setCalibrationProgress(Math.round((step / CALIBRATION_STEPS.length) * 100));
 
       if (step >= CALIBRATION_STEPS.length) {
-        clearInterval(interval);
+        clearInterval(calInterval);
         setTimeout(() => {
           setCurrentStep('Configuration');
         }, 400);

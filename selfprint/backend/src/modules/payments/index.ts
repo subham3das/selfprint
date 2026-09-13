@@ -153,12 +153,38 @@ export class PaymentsController extends BaseController {
         settlementStatus: 'PENDING'
       });
 
-      // 8. Broadcast to Store Queue in Real-Time via WebSockets
+      // 8. Broadcast to Store Queue and Admin in Real-Time via WebSockets
       try {
         const { socketManager } = await import('../../socket');
-        socketManager.broadcastToStore(String(storeObjId), 'NEW_PRINT_JOB', {
+        const sId = String(storeObjId);
+        const jId = String(newJob._id);
+        const queuePayload = {
+          job: newJob.toObject(),
+          jobId: jId,
+          jobNumber: newJob.jobNumber,
+          storeId: sId,
+          queuePosition,
+          totalPaid,
+          status: newJob.status,
+          timestamp: new Date().toISOString()
+        };
+
+        socketManager.emitToStore(sId, 'queue:created', queuePayload);
+        socketManager.emitToStore(sId, 'payment:updated', {
+          transactionId: txnId,
+          storeId: sId,
+          jobId: jId,
+          amount: totalPaid,
+          status: 'PAID',
+          timestamp: new Date().toISOString()
+        });
+        socketManager.broadcastToStore(sId, 'NEW_PRINT_JOB', {
           job: newJob.toObject(),
           queuePosition
+        });
+        socketManager.emitToStore(sId, 'TRANSACTION_SUCCESS', {
+          transactionId: txnId,
+          amount: totalPaid
         });
       } catch (wsErr) {
         console.error('WebSocket broadcast error:', wsErr);
